@@ -6,6 +6,8 @@
 import os
 import sys
 
+from pygments.lexers import PythonLexer
+
 sys.path.insert(0, os.path.abspath("../../"))
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
@@ -28,6 +30,12 @@ extensions = [
 
 templates_path = ["_templates"]
 exclude_patterns = []
+
+pygments_lexers = {
+    "ipython3": PythonLexer,
+}
+
+nbsphinx_codecell_lexer = "python"
 
 
 # -- Options for HTML output -------------------------------------------------

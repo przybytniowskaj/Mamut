@@ -4,7 +4,7 @@
    contain the root `toctree` directive.
 
 Welcome to MAMUT documentation!
-===================
+================================
 Machine Automated Modelling and Utility Toolkit
 
 
@@ -21,3 +21,4 @@ documentation for details.
    notebooks/walkthrough
    modules
    mamut.preprocessing
+   mamut.utils
