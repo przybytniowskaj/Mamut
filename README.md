@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="docs/source/_static/logo.webp" alt="MAMUT Logo" width="180" />
+  <img src="https://raw.githubusercontent.com/przybytniowskaj/Mamut/main/docs/source/_static/logo.webp" alt="MAMUT Logo" width="180" />
   <h1>MAMUT</h1>
   <p>Machine Automated Modelling and Utility Toolkit for tabular classification.</p>
 </div>
