@@ -116,7 +116,7 @@ class Mamut:
             "f1",
             "balanced_accuracy",
             "jaccard",
-            "roc_auc_score",
+            "roc_auc",
         ] = "f1",
         optimization_method: Literal["random_search", "bayes"] = "bayes",
         n_iterations: Optional[int] = 30,
@@ -134,7 +134,7 @@ class Mamut:
             Threshold for detecting imbalanced data.
         exclude_models : Optional[List[str]]
             List of models to exclude from selection.
-        score_metric : Literal["accuracy", "precision", "recall", "f1", "balanced_accuracy", "jaccard", "roc_auc_score"]
+        score_metric : Literal["accuracy", "precision", "recall", "f1", "balanced_accuracy", "jaccard", "roc_auc"]
             Metric used to evaluate model performance.
         optimization_method : Literal["random_search", "bayes"]
             Method for hyperparameter optimization.
