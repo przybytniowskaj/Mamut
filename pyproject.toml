@@ -2,8 +2,8 @@
 name = "mamut"
 version = "0.1.1"
 description = "Machine Automated Modelling and Utility Toolkit"
-authors = ["Your Name <you@example.com>"]
-license = "GPL-3.0-or-later"
+authors = ["Igor Kolodziej <igor.kolodziej@proton.me>", "Hubert Kowalski", "Julia Przybytniowska"]
+license = "MIT"
 readme = "README.md"
 
 [tool.poetry.dependencies]
