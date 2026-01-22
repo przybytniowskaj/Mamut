@@ -3,6 +3,7 @@ import math
 import os
 import platform
 import time
+import warnings
 from datetime import datetime
 from typing import List
 
@@ -12,6 +13,13 @@ import optuna
 import pandas as pd
 import psutil
 import seaborn as sns
+
+warnings.filterwarnings(
+    "ignore",
+    category=DeprecationWarning,
+    module="shap\\.plots\\.colors\\._colorconv",
+)
+
 import shap
 from jinja2 import Environment, FileSystemLoader
 from matplotlib import gridspec

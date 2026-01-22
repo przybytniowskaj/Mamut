@@ -1,3 +1,4 @@
+import ast
 import time
 import warnings
 from copy import copy
@@ -12,6 +13,7 @@ from sklearn.ensemble import (  # noqa
     StackingClassifier,
     VotingClassifier,
 )
+from sklearn.exceptions import ConvergenceWarning
 from sklearn.linear_model import LogisticRegression  # noqa
 from sklearn.metrics import (
     accuracy_score,
@@ -32,7 +34,7 @@ from xgboost import XGBClassifier  # noqa
 from mamut.utils.utils import adjust_search_spaces, model_param_dict, sample_parameter
 
 optuna.logging.set_verbosity(optuna.logging.WARNING)
-warnings.filterwarnings("ignore")
+warnings.filterwarnings("ignore", category=ConvergenceWarning)
 
 
 class ModelSelector:
@@ -131,7 +133,14 @@ class ModelSelector:
         )
         end_time = time.time()
         duration = end_time - start_time
-        return study.best_params, study.best_value, duration, study
+        best_params = study.best_params
+        hidden_sizes = best_params.get("hidden_layer_sizes")
+        if isinstance(hidden_sizes, str):
+            try:
+                best_params["hidden_layer_sizes"] = ast.literal_eval(hidden_sizes)
+            except (ValueError, SyntaxError):
+                pass
+        return best_params, study.best_value, duration, study
 
     def compare_models(self):
         best_model = None
@@ -221,10 +230,18 @@ class ModelSelector:
         results = {
             "accuracy_score": accuracy_score(self.y_test, y_pred),
             "balanced_accuracy_score": balanced_accuracy_score(self.y_test, y_pred),
-            "precision_score": precision_score(self.y_test, y_pred, average="weighted"),
-            "recall_score": recall_score(self.y_test, y_pred, average="weighted"),
-            "f1_score": f1_score(self.y_test, y_pred, average="weighted"),
-            "jaccard_score": jaccard_score(self.y_test, y_pred, average="weighted"),
+            "precision_score": precision_score(
+                self.y_test, y_pred, average="weighted", zero_division=0
+            ),
+            "recall_score": recall_score(
+                self.y_test, y_pred, average="weighted", zero_division=0
+            ),
+            "f1_score": f1_score(
+                self.y_test, y_pred, average="weighted", zero_division=0
+            ),
+            "jaccard_score": jaccard_score(
+                self.y_test, y_pred, average="weighted", zero_division=0
+            ),
             "roc_auc_score": roc_auc_score(
                 self.y_test, y_pred_proba, multi_class="ovr", average="weighted"
             ),

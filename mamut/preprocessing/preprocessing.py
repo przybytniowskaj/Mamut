@@ -1,3 +1,4 @@
+import warnings
 from typing import List, Literal, Optional
 
 import numpy as np
@@ -14,6 +15,17 @@ from mamut.preprocessing.handlers import (
     handle_scaling,
     handle_selection,
     handle_skewed,
+)
+
+warnings.filterwarnings(
+    "ignore",
+    category=DeprecationWarning,
+    module="numpy\\.ma\\.extras",
+)
+warnings.filterwarnings(
+    "ignore",
+    category=DeprecationWarning,
+    message="Conversion of an array with ndim > 0 to a scalar is deprecated.*",
 )
 
 
