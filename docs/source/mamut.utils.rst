@@ -11,11 +11,3 @@ mamut.utils.utils module
    :members:
    :undoc-members:
    :show-inheritance:
-
-Module contents
----------------
-
-.. automodule:: mamut.utils
-   :members:
-   :undoc-members:
-   :show-inheritance:
