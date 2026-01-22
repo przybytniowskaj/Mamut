@@ -2,6 +2,8 @@ from typing import List, Literal
 
 import numpy as np
 import pandas as pd
+from imblearn.combine import SMOTETomek
+from imblearn.over_sampling import SMOTE
 from scipy.stats import skew
 from sklearn.decomposition import PCA
 from sklearn.ensemble import ExtraTreesClassifier, IsolationForest
@@ -85,7 +87,19 @@ def handle_imbalanced(
             f"Invalid resampling strategy, choose from {settings.resampler_mapping.keys()}."
         )
 
-    resampler = settings.resampler_mapping[strategy](random_state=random_state)
+    y_series = y if isinstance(y, pd.Series) else pd.Series(y)
+    minority_count = y_series.value_counts().min()
+    if strategy in {"SMOTE", "combine"}:
+        k_neighbors = min(5, minority_count - 1)
+        if k_neighbors < 1:
+            return X, y, None
+        smote = SMOTE(random_state=random_state, k_neighbors=k_neighbors)
+        if strategy == "SMOTE":
+            resampler = smote
+        else:
+            resampler = SMOTETomek(random_state=random_state, smote=smote)
+    else:
+        resampler = settings.resampler_mapping[strategy](random_state=random_state)
     X_resampled, y_resampled = resampler.fit_resample(X, y)
 
     return X_resampled, y_resampled, resampler
