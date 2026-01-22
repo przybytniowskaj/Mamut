@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "mamut"
-version = "0.1.0"
+version = "0.1.1"
 description = "Machine Automated Modelling and Utility Toolkit"
 authors = ["Your Name <you@example.com>"]
 license = "GPL-3.0-or-later"
