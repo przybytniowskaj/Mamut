@@ -144,6 +144,10 @@ def sample_parameter(trial, param_name, value):
             return trial.suggest_int(param_name, low, high)
     elif len(value) == 2:
         options, dist_type = value
+        if any(isinstance(option, tuple) for option in options):
+            option_map = {repr(option): option for option in options}
+            choice = trial.suggest_categorical(param_name, list(option_map.keys()))
+            return option_map[choice]
         return trial.suggest_categorical(param_name, options)
     else:
         raise ValueError("Invalid hyperparameter search space.")

@@ -1,3 +1,4 @@
+import warnings
 from typing import List, Literal, Optional
 
 import numpy as np
@@ -14,6 +15,17 @@ from mamut.preprocessing.handlers import (
     handle_scaling,
     handle_selection,
     handle_skewed,
+)
+
+warnings.filterwarnings(
+    "ignore",
+    category=DeprecationWarning,
+    module="numpy\\.ma\\.extras",
+)
+warnings.filterwarnings(
+    "ignore",
+    category=DeprecationWarning,
+    message="Conversion of an array with ndim > 0 to a scalar is deprecated.*",
 )
 
 
@@ -235,15 +247,16 @@ class Preprocessor:
                     "n_missing_categorical": self.n_missing_categorical,
                 }
 
-        n_row_before = X.shape[0]
-        X, y, self.outlier_trans_ = handle_outliers(
-            X, y, self.numeric_features, random_state=self.random_state
-        )
-        n_row_after = X.shape[0]
-        self.report_["removing_outliers"] = {
-            "transformer": self.outlier_trans_.__class__.__name__,
-            "n_outliers_removed": n_row_before - n_row_after,
-        }
+        if self.has_numeric_:
+            n_row_before = X.shape[0]
+            X, y, self.outlier_trans_ = handle_outliers(
+                X, y, self.numeric_features, random_state=self.random_state
+            )
+            n_row_after = X.shape[0]
+            self.report_["removing_outliers"] = {
+                "transformer": self.outlier_trans_.__class__.__name__,
+                "n_outliers_removed": n_row_before - n_row_after,
+            }
 
         if self.has_categorical_:
             X, self.cat_trans_, self.ohe_feature_names_ = handle_categorical(
@@ -254,15 +267,22 @@ class Preprocessor:
                 "encoded_feature_names": self.ohe_feature_names_,
             }
 
-        X, self.skew_trans_, self.skewed_feature_names_, self.lambdas_ = handle_skewed(
-            X, self.numeric_features, threshold=self.skew_threshold
-        )
-        self.report_["skew_transform"] = {
-            "transformer": self.skew_trans_.__class__.__name__,
-            "method": self.skew_trans_.method,
-            "skewed_feature_names": self.skewed_feature_names_,
-            "lambdas": self.lambdas_,
-        }
+        if self.has_numeric_:
+            (
+                X,
+                self.skew_trans_,
+                self.skewed_feature_names_,
+                self.lambdas_,
+            ) = handle_skewed(X, self.numeric_features, threshold=self.skew_threshold)
+            self.report_["skew_transform"] = {
+                "transformer": self.skew_trans_.__class__.__name__,
+                "method": self.skew_trans_.method,
+                "skewed_feature_names": self.skewed_feature_names_,
+                "lambdas": self.lambdas_,
+            }
+        else:
+            self.skewed_feature_names_ = []
+            self.lambdas_ = []
 
         if self.has_numeric_:
             X, self.scaler_ = handle_scaling(X, self.numeric_features, self.scaling)
@@ -304,11 +324,18 @@ class Preprocessor:
             X, y, self.imbalanced_trans_ = handle_imbalanced(
                 X, y, self.resampling_strategy, random_state=self.random_state
             )
-            n_row_after = X.shape[0]
-            self.report_["imbalanced_resampling"] = {
-                "transformer": self.imbalanced_trans_.__class__.__name__,
-                "n_resampled": n_row_after - n_row_before,
-            }
+            if self.imbalanced_trans_ is not None:
+                n_row_after = X.shape[0]
+                self.report_["imbalanced_resampling"] = {
+                    "transformer": self.imbalanced_trans_.__class__.__name__,
+                    "n_resampled": n_row_after - n_row_before,
+                }
+            else:
+                self.report_["imbalanced_resampling"] = {
+                    "skipped": True,
+                    "reason": "Insufficient minority samples for SMOTE.",
+                    "strategy": self.resampling_strategy,
+                }
 
         self.skewed_ = len(self.skewed_feature_names_) > 0
         self.fitted = True
