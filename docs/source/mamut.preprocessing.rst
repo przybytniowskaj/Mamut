@@ -25,12 +25,19 @@ Contains the main data preprocessor class of the package.
    :members:
    :undoc-members:
    :show-inheritance:
-   :no-index:
 
 mamut.preprocessing.settings module
 -----------------------------------
 
 .. automodule:: mamut.preprocessing.settings
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+Module contents
+---------------
+
+.. automodule:: mamut.preprocessing
    :members:
    :undoc-members:
    :show-inheritance:

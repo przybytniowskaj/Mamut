@@ -20,6 +20,23 @@ mamut.model\_selection module
    :undoc-members:
    :show-inheritance:
 
+mamut.preprocessing module
+--------------------------
+
+.. automodule:: mamut.preprocessing
+   :members:
+   :undoc-members:
+   :show-inheritance:
+   :no-index:
+
+mamut.utils module
+------------------
+
+.. automodule:: mamut.utils
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 mamut.wrapper module
 --------------------
 
@@ -27,4 +44,11 @@ mamut.wrapper module
    :members:
    :undoc-members:
    :show-inheritance:
-   :no-index:
+
+Module contents
+---------------
+
+.. automodule:: mamut
+   :members:
+   :undoc-members:
+   :show-inheritance:
