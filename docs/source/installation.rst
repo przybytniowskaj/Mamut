@@ -15,11 +15,11 @@ From source (editable install):
 
    pip install -e .
 
-For development with Poetry:
+For development with uv:
 
 .. code-block:: sh
 
-   poetry install
+   uv sync --all-groups
 
 Quickstart
 ==========

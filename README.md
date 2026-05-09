@@ -32,9 +32,9 @@ From source:
 pip install -e .
 ```
 
-For development with Poetry:
+For development with uv:
 ```sh
-poetry install
+uv sync --all-groups
 ```
 
 ## Quickstart
@@ -71,9 +71,11 @@ proba = mamut.predict_proba(X)
 
 ## Development
 ```sh
-poetry run pytest
-poetry run pre-commit run --all-files
-make -C docs html
+uv sync --all-groups
+uv run pytest
+uv run pre-commit run --all-files
+uv run make -C docs html
+uv build
 ```
 
 ## Examples and Docs
