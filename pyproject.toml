@@ -10,6 +10,24 @@ authors = [
 license = "MIT"
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
+keywords = [
+    "automl",
+    "classification",
+    "machine-learning",
+    "model-selection",
+    "tabular-data",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
 dependencies = [
     "pandas>=2.2.3,<3.0.0",
     "scikit-learn==1.5.2",
@@ -26,24 +44,40 @@ dependencies = [
     "shap>=0.46.0,<0.47.0",
 ]
 
+[project.urls]
+Documentation = "https://mamut.readthedocs.io/en/latest/"
+Homepage = "https://github.com/przybytniowskaj/Mamut"
+Issues = "https://github.com/przybytniowskaj/Mamut/issues"
+Repository = "https://github.com/przybytniowskaj/Mamut"
+
 [dependency-groups]
 test = [
     "pytest>=8.3.4,<9.0.0",
 ]
 lint = [
+    "deptry>=0.24.0,<0.25.0",
     "pre-commit>=4.0.1,<5.0.0",
 ]
 docs = [
+    "pygments>=2.19.0,<3.0.0",
     "sphinx>=8.1.3,<9.0.0",
     "sphinx-rtd-theme>=3.0.2,<4.0.0",
     "sphinx-autodoc-typehints>=3.0.0,<4.0.0",
     "nbsphinx>=0.9.6,<0.10.0",
     "nbconvert>=7.16.5,<8.0.0",
 ]
+package = [
+    "twine>=6.1.0,<7.0.0",
+]
+security = [
+    "pip-audit>=2.9.0,<3.0.0",
+]
 dev = [
     { include-group = "test" },
     { include-group = "lint" },
     { include-group = "docs" },
+    { include-group = "package" },
+    { include-group = "security" },
 ]
 
 [build-system]
@@ -55,3 +89,9 @@ packages = ["mamut"]
 
 [tool.isort]
 profile = "black"
+
+[tool.deptry]
+extend_exclude = ["debug", "docs"]
+ignore_notebooks = true
+known_first_party = ["mamut"]
+package_module_name_map = { "imbalanced-learn" = "imblearn", "scikit-learn" = "sklearn" }

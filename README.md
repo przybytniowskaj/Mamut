@@ -7,6 +7,7 @@
 [![Documentation Status](https://readthedocs.org/projects/mamut/badge/?version=latest)](https://mamut.readthedocs.io/en/latest/?badge=latest)
 [![Test Pipeline](https://github.com/przybytniowskaj/Mamut/actions/workflows/tests.yml/badge.svg)](https://github.com/przybytniowskaj/Mamut/actions/workflows/tests.yml)
 [![Pre-commit Pipeline](https://github.com/przybytniowskaj/Mamut/actions/workflows/pre-commit.yaml/badge.svg)](https://github.com/przybytniowskaj/Mamut/actions/workflows/pre-commit.yaml)
+[![Security Audit](https://github.com/przybytniowskaj/Mamut/actions/workflows/security.yml/badge.svg)](https://github.com/przybytniowskaj/Mamut/actions/workflows/security.yml)
 ![License](https://img.shields.io/github/license/przybytniowskaj/Mamut)
 
 ## Overview
@@ -72,10 +73,13 @@ proba = mamut.predict_proba(X)
 ## Development
 ```sh
 uv sync --all-groups
+uv run deptry .
+scripts/audit_dependencies.sh
 uv run pytest
 uv run pre-commit run --all-files
 uv run make -C docs html
 uv build
+uv run twine check dist/*
 ```
 
 ## Examples and Docs

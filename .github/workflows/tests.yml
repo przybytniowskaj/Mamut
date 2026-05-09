@@ -32,8 +32,19 @@ jobs:
       - name: Install dependencies
         run: uv sync --locked --all-groups
 
+      - name: Check dependency declarations
+        run: uv run deptry .
+
       - name: Run tests
         run: uv run pytest
 
       - name: Build package
         run: uv build
+
+      - name: Check package metadata
+        run: uv run twine check dist/*
+
+      - name: Smoke test built wheel
+        run: |
+          WHEEL="$(find dist -name 'mamut-*.whl' -print -quit)"
+          uv run --isolated --no-project --with "$WHEEL" python tests/smoke_package.py
