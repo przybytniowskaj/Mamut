@@ -1,5 +1,6 @@
 # Custom
 fitted_models/
+mamut_report/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -73,6 +74,7 @@ instance/
 
 # Sphinx documentation
 docs/_build/
+docs/build/
 
 # PyBuilder
 .pybuilder/

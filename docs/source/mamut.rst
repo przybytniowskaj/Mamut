@@ -5,9 +5,9 @@ MAMUT API
    :description: API reference for the MAMUT automated tabular classification workflow.
    :keywords: MAMUT API, Mamut class, automated classification, Python API
 
-The main public API is :class:`mamut.wrapper.Mamut`. Use it to fit candidate
-models, select the best pipeline, generate predictions, create reports, and
-save model artifacts.
+The main public API is ``Mamut``. Import it with ``from mamut import Mamut`` to
+fit candidate models, select the best pipeline, generate predictions, create
+reports, and save model artifacts.
 
 Mamut
 -----

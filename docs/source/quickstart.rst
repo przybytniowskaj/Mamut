@@ -15,7 +15,7 @@ Fit a Model
 
    from sklearn.datasets import load_iris
 
-   from mamut.wrapper import Mamut
+   from mamut import Mamut
 
    X, y = load_iris(as_frame=True, return_X_y=True)
 

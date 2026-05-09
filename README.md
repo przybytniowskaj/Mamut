@@ -11,7 +11,9 @@
 ![License](https://img.shields.io/github/license/przybytniowskaj/Mamut)
 
 ## Overview
-MAMUT is a Python toolkit that automates model selection and evaluation for **classification** tasks on tabular data. It bundles preprocessing, Optuna-driven hyperparameter optimization, model comparison, and reporting into a single workflow built on scikit-learn and XGBoost.
+MAMUT is a Python toolkit for transparent **classification** workflows on tabular data. It bundles preprocessing, Optuna-driven hyperparameter optimization, model comparison, validation diagnostics, and reporting into a single workflow built on scikit-learn and XGBoost.
+
+MAMUT is best used as a readable baseline and experiment report generator for beginners, small teams, and portfolio-scale projects. It is not positioned as a replacement for industrial AutoML systems such as AutoGluon, FLAML, or H2O AutoML; its value is in showing what was tried, how the result was validated, and whether simple baselines challenge the selected model.
 
 ## Key Features
 - End-to-end preprocessing: missing values, categorical encoding, skew correction, scaling, outlier filtering, imbalance handling (SMOTE/undersampling/SMOTETomek), optional feature selection, and PCA.
@@ -21,6 +23,7 @@ MAMUT is a Python toolkit that automates model selection and evaluation for **cl
 - Evidence reporting: leakage checks, dummy/logistic/random-forest baselines, repeated stratified CV, and metric confidence intervals.
 - Report generation via `evaluate()` with metrics, plots, and SHAP explanations.
 - Configurable artifacts: `fit()` keeps models in memory by default and saves fitted models only when `save_models=True`.
+- Reproducible benchmark diagnostics via `scripts/benchmark_evidence.py`.
 
 ## Installation
 Python 3.12 is the target runtime (see `.python-version`).
@@ -45,7 +48,7 @@ uv sync --all-groups
 ## Quickstart
 ```python
 from sklearn.datasets import load_iris
-from mamut.wrapper import Mamut
+from mamut import Mamut
 
 X, y = load_iris(as_frame=True, return_X_y=True)
 
@@ -87,6 +90,7 @@ uv run pytest
 uv run pre-commit run --all-files
 uv run make -C docs html
 uv run sphinx-build -W --keep-going -b html docs/source docs/build/html-strict
+uv run python scripts/benchmark_evidence.py
 uv build
 uv run twine check dist/*
 ```
@@ -96,8 +100,10 @@ uv run twine check dist/*
 - Quickstart: https://mamut.readthedocs.io/en/latest/quickstart.html
 - User guide: https://mamut.readthedocs.io/en/latest/user_guide.html
 - Reports and artifacts: https://mamut.readthedocs.io/en/latest/reports.html
+- Evidence benchmark: https://mamut.readthedocs.io/en/latest/benchmark_evidence.html
 - API reference: https://mamut.readthedocs.io/en/latest/mamut.html
 - Notebook walkthrough: `docs/source/notebooks/walkthrough.ipynb`
+- Changelog: `CHANGELOG.md`
 
 ## License
 MIT. See `LICENSE`.

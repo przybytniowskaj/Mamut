@@ -2,16 +2,21 @@ MAMUT: Automated Tabular Classification
 ========================================
 
 .. meta::
-   :description: MAMUT is a Python package for automated tabular classification with preprocessing, model selection, evaluation reports, and SHAP explanations.
-   :keywords: MAMUT, automated machine learning, tabular classification, scikit-learn, XGBoost, Optuna, SHAP
+   :description: MAMUT is a Python package for transparent tabular classification with preprocessing, model selection, validation evidence, evaluation reports, and SHAP explanations.
+   :keywords: MAMUT, automated machine learning, tabular classification, validation evidence, scikit-learn, XGBoost, Optuna, SHAP
 
-MAMUT is a Python package for automated classification workflows on tabular
+MAMUT is a Python package for transparent classification workflows on tabular
 data. It combines preprocessing, Optuna-driven model search, metric comparison,
-model persistence, and HTML report generation behind a compact API.
+validation evidence, configurable model artifacts, and HTML report generation
+behind a compact API.
 
 Use MAMUT when you want a fast baseline for structured classification data and
 a reproducible summary of the models, preprocessing decisions, metrics, plots,
-and SHAP explanations produced during an experiment.
+validation diagnostics, and SHAP explanations produced during an experiment.
+
+MAMUT is not an industrial AutoML replacement. It is most useful when readable
+evidence, simple baselines, and validation integrity matter more than searching
+the largest possible model space.
 
 Highlights
 ----------
@@ -23,7 +28,9 @@ Highlights
 * Hyperparameter optimization with Optuna using Bayesian or random search.
 * Evaluation reports with metrics, confusion matrices, ROC curves, feature
   importances, and SHAP plots.
-* Saved model artifacts for the best model and fitted candidate models.
+* Evidence diagnostics with leakage checks, baseline comparison, score
+  stability, and confidence intervals.
+* Configurable model artifacts for the best model and fitted candidate models.
 
 Minimal Example
 ---------------
@@ -32,7 +39,7 @@ Minimal Example
 
    from sklearn.datasets import load_iris
 
-   from mamut.wrapper import Mamut
+   from mamut import Mamut
 
    X, y = load_iris(as_frame=True, return_X_y=True)
 
@@ -53,6 +60,7 @@ Documentation
    quickstart
    user_guide
    reports
+   benchmark_evidence
    notebooks/walkthrough
 
 .. toctree::

@@ -165,6 +165,9 @@ baseline beats the selected model on final holdout data, MAMUT challenges the
 selection but does not silently promote the holdout winner. Use that challenge
 to rerun model selection or reserve a new final holdout before deployment.
 
+For a reproducible example of these diagnostics on public sklearn datasets, see
+:doc:`benchmark_evidence`.
+
 Reproducibility
 ---------------
 
@@ -191,4 +194,5 @@ Limitations
 MAMUT currently targets supervised classification only. It is designed for
 tabular data and does not implement time-series validation, regression,
 multilabel classification, text pipelines, image pipelines, or custom model
-registries.
+registries. It should be treated as a transparent baseline and reporting
+assistant, not as a replacement for larger AutoML systems.
