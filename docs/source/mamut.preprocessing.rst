@@ -1,36 +1,46 @@
-mamut.preprocessing package
-===========================
+Preprocessing API
+=================
 
-This module handles data preprocessing tasks for the Mamut package.
+.. meta::
+   :description: API reference for MAMUT preprocessing, including the Preprocessor class and preprocessing handlers.
+   :keywords: MAMUT preprocessing, Preprocessor, tabular data preprocessing
 
-Submodules
-----------
+The preprocessing API transforms tabular data before model selection. Most
+users configure preprocessing through :class:`mamut.wrapper.Mamut`, which
+forwards preprocessing keyword arguments to
+:class:`mamut.preprocessing.preprocessing.Preprocessor`.
 
-mamut.preprocessing.handlers module
------------------------------------
+Preprocessor
+------------
 
-A set of functions that handle basic data preprocessing tasks.
+.. autoclass:: mamut.preprocessing.preprocessing.Preprocessor
+   :show-inheritance:
+
+Common Methods
+~~~~~~~~~~~~~~
+
+.. automethod:: mamut.preprocessing.preprocessing.Preprocessor.fit_transform
+   :no-index:
+
+.. automethod:: mamut.preprocessing.preprocessing.Preprocessor.transform
+   :no-index:
+
+.. automethod:: mamut.preprocessing.preprocessing.Preprocessor.report
+   :no-index:
+
+Handlers
+--------
+
+The handler functions below are lower-level building blocks used by
+``Preprocessor``.
 
 .. automodule:: mamut.preprocessing.handlers
    :members:
-   :undoc-members:
    :show-inheritance:
 
-mamut.preprocessing.preprocessing module
-----------------------------------------
-
-Contains the main data preprocessor class of the package.
-
-.. automodule:: mamut.preprocessing.preprocessing
-   :members:
-   :undoc-members:
-   :show-inheritance:
-   :no-index:
-
-mamut.preprocessing.settings module
------------------------------------
+Settings
+--------
 
 .. automodule:: mamut.preprocessing.settings
    :members:
-   :undoc-members:
    :show-inheritance:

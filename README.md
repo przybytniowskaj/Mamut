@@ -30,6 +30,8 @@ pip install mamut
 
 From source:
 ```sh
+git clone https://github.com/przybytniowskaj/Mamut.git
+cd Mamut
 pip install -e .
 ```
 
@@ -45,7 +47,7 @@ from mamut.wrapper import Mamut
 
 X, y = load_iris(as_frame=True, return_X_y=True)
 
-mamut = Mamut(n_iterations=5, optimization_method="bayes")
+mamut = Mamut(n_iterations=1, optimization_method="random_search")
 mamut.fit(X, y)
 
 preds = mamut.predict(X)
@@ -78,13 +80,18 @@ scripts/audit_dependencies.sh
 uv run pytest
 uv run pre-commit run --all-files
 uv run make -C docs html
+uv run sphinx-build -W --keep-going -b html docs/source docs/build/html-strict
 uv build
 uv run twine check dist/*
 ```
 
-## Examples and Docs
-- Notebooks: `walkthrough.ipynb` and `docs/source/notebooks/walkthrough.ipynb`.
+## Documentation
 - Documentation site: https://mamut.readthedocs.io/en/latest/
+- Quickstart: https://mamut.readthedocs.io/en/latest/quickstart.html
+- User guide: https://mamut.readthedocs.io/en/latest/user_guide.html
+- Reports and artifacts: https://mamut.readthedocs.io/en/latest/reports.html
+- API reference: https://mamut.readthedocs.io/en/latest/mamut.html
+- Notebook walkthrough: `docs/source/notebooks/walkthrough.ipynb`
 
 ## License
 MIT. See `LICENSE`.
