@@ -175,3 +175,5 @@ cython_debug/
 /mamut/playground.py
 /debug/check_model_reinitialization.py
 /mamut/mamut_report/
+AGENTS.md
+llm_context/
