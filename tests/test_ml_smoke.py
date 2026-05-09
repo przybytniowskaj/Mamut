@@ -12,6 +12,7 @@ from sklearn.metrics import (
 from sklearn.tree import DecisionTreeClassifier
 
 import mamut.model_selection as model_selection
+import mamut.wrapper as wrapper_module
 from mamut.evaluation import ModelEvaluator
 from mamut.wrapper import Mamut
 
@@ -87,9 +88,30 @@ def test_mamut_fit_predict_with_preprocessing_smoke(tmp_path, monkeypatch):
 
     assert fitted_model is mamut.best_model_
     assert predictions.shape == (10,)
+    assert set(predictions).issubset({"yes", "no"})
     assert probabilities.shape == (10, 2)
     assert {"imputation", "category_encoding", "scaling"}.issubset(preprocessing_report)
+    assert not (tmp_path / "fitted_models").exists()
+
+
+def test_mamut_fit_can_save_model_artifacts_when_requested(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    X, y = _mixed_classification_frame()
+    mamut = Mamut(
+        exclude_models=_exclude_all_except("GaussianNB"),
+        n_iterations=1,
+        optimization_method="random_search",
+        random_state=42,
+        save_models=True,
+        num_imputation="mean",
+        cat_imputation="most_frequent",
+    )
+
+    mamut.fit(X, y)
+
+    assert mamut.models_output_path_ is not None
     assert (tmp_path / "fitted_models").is_dir()
+    assert list((tmp_path / "fitted_models").glob("*/GaussianNB.joblib"))
 
 
 def test_mamut_xgboost_smoke(tmp_path, monkeypatch):
@@ -112,6 +134,39 @@ def test_mamut_xgboost_smoke(tmp_path, monkeypatch):
 
     assert "XGBClassifier" in mamut.raw_fitted_models_
     assert predictions.shape == (8,)
+
+
+def test_mamut_evaluate_uses_holdout_when_available(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    X, y = _numeric_classification_frame()
+    mamut = Mamut(
+        exclude_models=_exclude_all_except("GaussianNB"),
+        n_iterations=1,
+        optimization_method="random_search",
+        random_state=42,
+        holdout_size=0.2,
+    )
+    mamut.fit(X, y)
+    captured = {}
+
+    class CapturingEvaluator:
+        def __init__(self, *args, **kwargs):
+            captured.update(kwargs)
+
+        def evaluate_to_html(self, summary):
+            captured["summary"] = summary
+
+        def plot_results_in_notebook(self):
+            captured["plotted"] = True
+
+    monkeypatch.setattr(wrapper_module, "ModelEvaluator", CapturingEvaluator)
+
+    mamut.evaluate()
+
+    assert captured["evaluation_dataset"] == "holdout"
+    assert captured["rank_by_metric"] is False
+    assert captured["training_summary"].equals(mamut.holdout_summary_)
+    assert captured["summary"].equals(mamut.holdout_summary_)
 
 
 def test_mamut_evaluate_generates_report_and_shap_artifacts(tmp_path, monkeypatch):
@@ -139,8 +194,8 @@ def test_mamut_evaluate_generates_report_and_shap_artifacts(tmp_path, monkeypatc
     )
     evaluator = ModelEvaluator(
         {"DecisionTreeClassifier": model},
-        X_test=X.to_numpy(),
-        y_test=y,
+        X_evaluation=X.to_numpy(),
+        y_evaluation=y,
         X_train=X.to_numpy(),
         y_train=y.to_numpy(),
         X=X,

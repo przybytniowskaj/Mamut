@@ -189,9 +189,9 @@ class ModelEvaluator:
     def __init__(
         self,
         models: dict,
-        # X_test and y_test are preprocessed. X and y are not.
-        X_test: np.ndarray,
-        y_test: np.ndarray,
+        # X_evaluation and y_evaluation are preprocessed. X and y are not.
+        X_evaluation: np.ndarray,
+        y_evaluation: np.ndarray,
         X_train: np.ndarray,
         y_train: np.ndarray,
         X: pd.DataFrame,
@@ -208,13 +208,16 @@ class ModelEvaluator:
         greedy_ensemble,
         excluded_models: List[str] = None,
         n_top_models: int = 3,
+        evaluation_dataset: str = "validation",
+        selected_model_name: str = None,
+        rank_by_metric: bool = True,
     ):
 
         self.models = models
         self.X = X
         self.y = y
-        self.X_test = X_test
-        self.y_test = y_test
+        self.X_evaluation = X_evaluation
+        self.y_evaluation = y_evaluation
         self.X_train = X_train
         self.y_train = y_train
         self.optimizer = optimizer
@@ -236,6 +239,9 @@ class ModelEvaluator:
             )
         self.preprocessing_steps = preprocessing_steps
         self.excluded_models = excluded_models if excluded_models else []
+        self.evaluation_dataset = evaluation_dataset
+        self.selected_model_name = selected_model_name
+        self.rank_by_metric = rank_by_metric
 
         self.report_output_path = os.path.join(os.getcwd(), "mamut_report")
         self.plot_output_path = os.path.join(self.report_output_path, "plots")
@@ -300,9 +306,9 @@ class ModelEvaluator:
             model = next(
                 m for m in self.models.values() if m.__class__.__name__ == model_name
             )
-            y_pred = model.predict_proba(self.X_test)[:, 1]
-            fpr, tpr, thresholds = roc_curve(self.y_test, y_pred)
-            auc = roc_auc_score(self.y_test, y_pred)
+            y_pred = model.predict_proba(self.X_evaluation)[:, 1]
+            fpr, tpr, thresholds = roc_curve(self.y_evaluation, y_pred)
+            auc = roc_auc_score(self.y_evaluation, y_pred)
             ax.plot(fpr, tpr, lw=1.5, label=f"{model_name} ROC ({auc:.2f})")
 
         ax.plot([0, 1], [0, 1], "k--", lw=1.5)
@@ -335,14 +341,16 @@ class ModelEvaluator:
     ) -> None:
         fig, ax = plt.subplots(figsize=(12, 6))
         top_models = training_summary["Model"].head(n_top).to_numpy()
-        y_test_bin = label_binarize(self.y_test, classes=np.unique(self.y_test))
+        y_evaluation_bin = label_binarize(
+            self.y_evaluation, classes=np.unique(self.y_evaluation)
+        )
 
         for model_name in top_models:
             model = next(
                 m for m in self.models.values() if m.__class__.__name__ == model_name
             )
-            y_score = model.fit(self.X_train, self.y_train).predict_proba(self.X_test)
-            fpr, tpr, _ = roc_curve(y_test_bin.ravel(), y_score.ravel())
+            y_score = model.predict_proba(self.X_evaluation)
+            fpr, tpr, _ = roc_curve(y_evaluation_bin.ravel(), y_score.ravel())
             roc_auc = auc(fpr, tpr)
 
             ax.plot(
@@ -394,8 +402,8 @@ class ModelEvaluator:
             model = next(
                 m for m in self.models.values() if m.__class__.__name__ == model_name
             )
-            y_pred = model.predict(self.X_test)
-            cm = confusion_matrix(self.y_test, y_pred)
+            y_pred = model.predict(self.X_evaluation)
+            cm = confusion_matrix(self.y_evaluation, y_pred)
 
             ax = fig.add_subplot(gs[i])
             sns.heatmap(cm, annot=True, fmt="d", cmap="Blues", cbar=False, ax=ax)
@@ -683,12 +691,17 @@ class ModelEvaluator:
                 "duration": "Training Time [s]",
             }
         )
-        # Sort the training_summary DataFrame by the score_metric column
-        training_summary = training_summary.sort_values(
-            by=training_summary.columns[1], ascending=False
-        ).reset_index(drop=True)
+        if self.rank_by_metric:
+            training_summary = training_summary.sort_values(
+                by=training_summary.columns[1], ascending=False
+            ).reset_index(drop=True)
+        else:
+            training_summary = training_summary.reset_index(drop=True)
 
         self.training_summary = training_summary
+        selected_model_name = (
+            self.selected_model_name or training_summary.iloc[0]["Model"]
+        )
 
         styled_training_summary = training_summary.style.apply(
             _highlight_first_cell, axis=1
@@ -711,7 +724,7 @@ class ModelEvaluator:
         self._plot_confusion_matrices(training_summary)
         self._plot_hyperparameter_tuning_history(training_summary)
         self._plot_feature_importances()
-        best_model_name = training_summary.iloc[0]["Model"]
+        best_model_name = selected_model_name
         best_model = self.models[best_model_name]
 
         self._plot_shap_beeswarm(best_model)
@@ -739,7 +752,9 @@ class ModelEvaluator:
             ),
             metric=self.metric,
             n_trials=self.n_trials,
-            best_model=training_summary.iloc[0]["Model"],
+            best_model=selected_model_name,
+            evaluation_dataset=self.evaluation_dataset,
+            rank_by_metric=self.rank_by_metric,
             basic_dataset_info=dataset_basic_list,
             feature_summary=feature_summary.to_html(index=False),
             class_distribution=class_distribution.to_html(index=False),
@@ -773,20 +788,33 @@ class ModelEvaluator:
                 "The model is not fitted and can not be scored with any metric."
             )
 
-        y_pred = fitted_model.predict(self.X_test)
-        y_pred_proba = fitted_model.predict_proba(self.X_test)
+        y_pred = fitted_model.predict(self.X_evaluation)
+        y_pred_proba = fitted_model.predict_proba(self.X_evaluation)
         if self.binary:
             y_pred_proba = y_pred_proba[:, 1]
 
         results = {
-            "accuracy_score": accuracy_score(self.y_test, y_pred),
-            "balanced_accuracy_score": balanced_accuracy_score(self.y_test, y_pred),
-            "precision_score": precision_score(self.y_test, y_pred, average="weighted"),
-            "recall_score": recall_score(self.y_test, y_pred, average="weighted"),
-            "f1_score": f1_score(self.y_test, y_pred, average="weighted"),
-            "jaccard_score": jaccard_score(self.y_test, y_pred, average="weighted"),
+            "accuracy_score": accuracy_score(self.y_evaluation, y_pred),
+            "balanced_accuracy_score": balanced_accuracy_score(
+                self.y_evaluation, y_pred
+            ),
+            "precision_score": precision_score(
+                self.y_evaluation, y_pred, average="weighted", zero_division=0
+            ),
+            "recall_score": recall_score(
+                self.y_evaluation, y_pred, average="weighted", zero_division=0
+            ),
+            "f1_score": f1_score(
+                self.y_evaluation, y_pred, average="weighted", zero_division=0
+            ),
+            "jaccard_score": jaccard_score(
+                self.y_evaluation, y_pred, average="weighted", zero_division=0
+            ),
             "roc_auc_score": roc_auc_score(
-                self.y_test, y_pred_proba, multi_class="ovr", average="weighted"
+                self.y_evaluation,
+                y_pred_proba,
+                multi_class="ovr",
+                average="weighted",
             ),
         }
 

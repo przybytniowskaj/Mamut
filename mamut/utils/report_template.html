@@ -199,13 +199,18 @@
             respect to the metric: <b>{{ metric }}</b> for <b>{{ n_trials }}</b> iterations. Access any model's
             hyperparameters by getting the models from <i>mamut.raw_fitted_models_</i> field and running <i>.get_params()</i> on
             your model of interest. <br>
-            After tuning, all models were evaluated on the <b>test set</b> that was split from the original dataset.
-            The best model was <b><i>{{ best_model }}</i></b>.
+            After tuning, models were evaluated on the <b>{{ evaluation_dataset }} set</b>.
+            {% if evaluation_dataset == 'holdout' %}
+            This final holdout set was not used for model or ensemble selection; the selected model remains
+            <b><i>{{ best_model }}</i></b> based on validation performance.
+            {% else %}
+            The selected model was <b><i>{{ best_model }}</i></b> based on validation performance.
+            {% endif %}
         </p>
     </div>
 
     <div class="heading2">
-        <h2>Training Summary</h2>
+        <h2>Evaluation Summary</h2>
     </div>
     <div class="section">
         {{ training_summary | safe }}
@@ -259,8 +264,8 @@
         </div>
     </div>
     <div class="section">
-        <p>The results of the powerful greedy ensemble created during the experiment
-        on the <b>test set</b> are available in the below table.</p>
+        <p>The results of the greedy ensemble created during the experiment
+        on the <b>{{ evaluation_dataset }} set</b> are available in the below table.</p>
         {{ ensemble_summary | safe }}
     </div>
     {% endif %}
@@ -288,7 +293,7 @@
     <div class="section">
 <!--        <p>-->
 <!--            Below you will see the SHAP values for the best model. SHAP values provide a way to interpret the impact of each feature on the model's output.-->
-<!--            The SHAP values are calculated using the <b>test set</b> and are used to explain the predictions of the model. On the beeswarm plot below,-->
+<!--            The SHAP values are calculated using the selected evaluation set and are used to explain the predictions of the model. On the beeswarm plot below,-->
 <!--            each point represents a single prediction, and the <b>color</b> represents the <b>feature value</b>. The <b>x-axis</b> represents the <b>SHAP value</b>, and on the-->
 <!--            <b>y-axis</b> are the <b>top 10 features</b>.-->
 <!--        </p>-->

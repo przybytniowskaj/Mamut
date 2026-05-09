@@ -46,9 +46,9 @@ Model Search
 ------------
 
 MAMUT compares a set of supported classifiers and selects the best model by the
-configured score metric. Supported model families include logistic regression,
-random forest, support vector machines, XGBoost, multilayer perceptrons,
-Gaussian naive Bayes, and k-nearest neighbors.
+configured score metric on a validation split. Supported model families include
+logistic regression, random forest, support vector machines, XGBoost,
+multilayer perceptrons, Gaussian naive Bayes, and k-nearest neighbors.
 
 Use ``exclude_models`` to remove expensive or unwanted estimators by class name:
 
@@ -85,19 +85,55 @@ Supported values are ``accuracy``, ``precision``, ``recall``, ``f1``,
 ``balanced_accuracy``, ``jaccard``, and ``roc_auc_score``. Classification
 metrics are weighted when needed for multiclass problems.
 
+Validation and Holdout Data
+---------------------------
+
+By default, ``fit`` creates a stratified train/validation split. The validation
+split is used for model selection, ensemble selection, and
+``validation_summary_``:
+
+.. code-block:: python
+
+   mamut = Mamut(validation_size=0.2, random_state=42)
+   mamut.fit(X, y)
+
+For final evaluation, reserve a holdout set that is never used during model or
+ensemble selection:
+
+.. code-block:: python
+
+   mamut = Mamut(holdout_size=0.2, random_state=42)
+   mamut.fit(X, y)
+   mamut.evaluate()  # uses the holdout split automatically
+
+You can also provide an explicit holdout set:
+
+.. code-block:: python
+
+   mamut.fit(X_train, y_train, X_holdout=X_holdout, y_holdout=y_holdout)
+
+Use holdout scores for final reporting. Use validation scores for model
+selection and debugging.
+
 Reproducibility
 ---------------
 
-Pass ``random_state`` to control the train/test split, preprocessing components,
-resampling, and supported model initializers:
+Pass ``random_state`` to control the train/validation/holdout split,
+preprocessing components, resampling, and supported model initializers:
 
 .. code-block:: python
 
    mamut = Mamut(random_state=42)
 
-The fitted candidate models are saved under ``fitted_models/<timestamp>/``.
-Because this directory is created relative to the current working directory, run
-experiments from a known project or experiment folder.
+Fitted candidate models are kept in memory by default. Set
+``save_models=True`` to write them under ``fitted_models/<timestamp>/``:
+
+.. code-block:: python
+
+   mamut = Mamut(save_models=True)
+
+Because this directory is created relative to the current working directory,
+run experiments from a known project or experiment folder.
 
 Limitations
 -----------

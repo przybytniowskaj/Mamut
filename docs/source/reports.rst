@@ -5,14 +5,22 @@ Reports and Artifacts
    :description: Understand MAMUT evaluation reports, generated plots, SHAP explanations, saved fitted models, and output directories.
    :keywords: MAMUT reports, SHAP, model artifacts, evaluation report, fitted models
 
-MAMUT writes experiment artifacts to disk during fitting and evaluation. These
-outputs are useful for inspecting model behavior, comparing candidates, and
-sharing experiment results.
+MAMUT can write experiment artifacts to disk during fitting and evaluation.
+These outputs are useful for inspecting model behavior, comparing candidates,
+and sharing experiment results.
 
 Fitted Models
 -------------
 
-Calling ``fit`` saves fitted candidate pipelines under:
+Calling ``fit`` keeps fitted candidate pipelines in memory by default. To save
+them to disk, initialize MAMUT with ``save_models=True``:
+
+.. code-block:: python
+
+   mamut = Mamut(save_models=True)
+   mamut.fit(X, y)
+
+The fitted candidate pipelines are then saved under:
 
 .. code-block:: text
 
@@ -36,7 +44,8 @@ To save only the selected best model, create an output directory and call
 Evaluation Report
 -----------------
 
-Call ``evaluate`` after ``fit``:
+Call ``evaluate`` after ``fit``. When a holdout set is configured, ``evaluate``
+uses it automatically. Otherwise, the report clearly shows validation metrics:
 
 .. code-block:: python
 
@@ -61,7 +70,7 @@ The report includes:
 
 * system and Python environment details
 * dataset size, feature overview, missing rows, and class distribution
-* model comparison metrics and training durations
+* validation or holdout model comparison metrics and training durations
 * ROC curve plots
 * confusion matrices
 * Optuna optimization history plots

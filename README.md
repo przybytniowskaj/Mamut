@@ -17,8 +17,9 @@ MAMUT is a Python toolkit that automates model selection and evaluation for **cl
 - End-to-end preprocessing: missing values, categorical encoding, skew correction, scaling, outlier filtering, imbalance handling (SMOTE/undersampling/SMOTETomek), optional feature selection, and PCA.
 - Model search across common classifiers (LogisticRegression, RandomForestClassifier, SVC, XGBClassifier, MLPClassifier, GaussianNB, KNeighborsClassifier).
 - Hyperparameter optimization with Optuna (TPE/Bayesian or random search).
+- Validation-based model selection with optional final holdout evaluation.
 - Report generation via `evaluate()` with metrics, plots, and SHAP explanations.
-- Saved artifacts: `fit()` stores fitted models; `evaluate()` writes an HTML report and plots to disk.
+- Configurable artifacts: `fit()` keeps models in memory by default and saves fitted models only when `save_models=True`.
 
 ## Installation
 Python 3.12 is the target runtime (see `.python-version`).
@@ -57,20 +58,22 @@ proba = mamut.predict_proba(X)
 ## Configuration Notes
 - With preprocessing enabled (default), pass `X` as a pandas `DataFrame` and `y` as a `Series`.
 - Targets must be categorical (float targets raise a `ValueError`).
-- `fit()` performs a stratified 80/20 train/test split controlled by `random_state`.
+- `fit()` performs a stratified train/validation split controlled by `validation_size` and `random_state`.
+- Set `holdout_size` or pass `X_holdout`/`y_holdout` to reserve final evaluation data that is not used for model or ensemble selection.
 - Select the optimization strategy with `optimization_method="bayes"` or `"random_search"`.
 - Control the search budget with `n_iterations`.
 - Exclude models by class name (e.g., `exclude_models=["SVC"]`).
 - Preprocessing options are passed directly into `Mamut(...)` (e.g., `pca=True`, `feature_selection=True`, `num_imputation="knn"`).
+- Use `save_models=True` to write fitted candidate pipelines under `./fitted_models/<timestamp>/`.
 - `score_metric` expects one of: `accuracy`, `precision`, `recall`, `f1`, `balanced_accuracy`, `jaccard`, `roc_auc_score`.
 
 ## Outputs and Reports
-- `mamut.best_model_`: best performing pipeline after `fit`.
-- `mamut.training_summary_`: per-model scores and timings.
+- `mamut.best_model_`: validation-selected best performing pipeline after `fit`.
+- `mamut.validation_summary_`: per-model validation scores and timings.
+- `mamut.holdout_summary_`: optional final holdout scores when holdout data is configured.
 - `mamut.optuna_studies_`: Optuna studies keyed by model name.
-- `mamut.evaluate()`: writes an HTML report to `./mamut_report/report_<timestamp>.html` and stores plots in `./mamut_report/plots/`.
+- `mamut.evaluate()`: writes an HTML report to `./mamut_report/report_<timestamp>.html` and stores plots in `./mamut_report/plots/`. It uses holdout data automatically when available.
 - `mamut.save_best_model(path)`: writes the best model to an existing directory as a `.joblib` file.
-- `fit()` saves all fitted models to `./fitted_models/<timestamp>/` as `.joblib` files.
 
 ## Development
 ```sh
