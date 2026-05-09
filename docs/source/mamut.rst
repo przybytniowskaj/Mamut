@@ -30,6 +30,9 @@ Common Methods
 .. automethod:: mamut.wrapper.Mamut.evaluate
    :no-index:
 
+.. automethod:: mamut.wrapper.Mamut.generate_evidence
+   :no-index:
+
 .. automethod:: mamut.wrapper.Mamut.save_best_model
    :no-index:
 
@@ -60,3 +63,12 @@ report and plots.
 .. autoclass:: mamut.evaluation.ModelEvaluator
    :members:
    :show-inheritance:
+
+Evidence
+--------
+
+Evidence helpers power the validation integrity, leakage, baseline, and score
+stability sections of ``Mamut.evaluate``.
+
+.. automodule:: mamut.evidence
+   :members:

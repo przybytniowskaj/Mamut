@@ -167,6 +167,9 @@ def test_mamut_evaluate_uses_holdout_when_available(tmp_path, monkeypatch):
     assert captured["rank_by_metric"] is False
     assert captured["training_summary"].equals(mamut.holdout_summary_)
     assert captured["summary"].equals(mamut.holdout_summary_)
+    assert "baseline_comparison" in captured["evidence_report"]
+    assert "score_stability" in captured["evidence_report"]
+    assert "selection_guidance" in captured["evidence_report"]
 
 
 def test_mamut_evaluate_generates_report_and_shap_artifacts(tmp_path, monkeypatch):

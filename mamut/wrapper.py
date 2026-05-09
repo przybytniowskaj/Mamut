@@ -26,6 +26,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import LabelEncoder
 
+from mamut.evidence import build_evidence_report
 from mamut.preprocessing.preprocessing import Preprocessor
 from mamut.utils.utils import metric_dict
 
@@ -138,6 +139,10 @@ class Mamut:
         holdout_size: Optional[float] = None,
         save_models: bool = False,
         models_output_dir: str = "fitted_models",
+        evidence_cv_splits: int = 5,
+        evidence_cv_repeats: int = 3,
+        evidence_confidence_level: float = 0.95,
+        evidence_practical_margin: float = 0.01,
         **preprocessor_kwargs,
     ):
         """
@@ -168,12 +173,31 @@ class Mamut:
             Whether to save fitted candidate models during fit.
         models_output_dir : str
             Directory for fitted model artifacts when save_models=True.
+        evidence_cv_splits : int
+            Number of stratified folds used in evidence score stability checks.
+        evidence_cv_repeats : int
+            Number of repeats used in evidence score stability checks.
+        evidence_confidence_level : float
+            Confidence level used for evidence score intervals.
+        evidence_practical_margin : float
+            Minimum metric difference required before evidence challenges the
+            validation-selected model.
         **preprocessor_kwargs
             Additional keyword arguments for the Preprocessor.
         """
         self._validate_split_size(validation_size, "validation_size")
         if holdout_size is not None:
             self._validate_split_size(holdout_size, "holdout_size")
+        if evidence_cv_splits < 2:
+            raise ValueError("evidence_cv_splits must be at least 2.")
+        if evidence_cv_repeats < 1:
+            raise ValueError("evidence_cv_repeats must be at least 1.")
+        if not 0 < evidence_confidence_level < 1:
+            raise ValueError(
+                "evidence_confidence_level must be greater than 0 and less than 1."
+            )
+        if evidence_practical_margin < 0:
+            raise ValueError("evidence_practical_margin must be non-negative.")
 
         self.preprocess = preprocess
         self.imb_threshold = imb_threshold
@@ -187,6 +211,11 @@ class Mamut:
         self.holdout_size = holdout_size
         self.save_models = save_models
         self.models_output_dir = models_output_dir
+        self.evidence_cv_splits = evidence_cv_splits
+        self.evidence_cv_repeats = evidence_cv_repeats
+        self.evidence_confidence_level = evidence_confidence_level
+        self.evidence_practical_margin = evidence_practical_margin
+        self.preprocessor_kwargs = preprocessor_kwargs.copy()
 
         self.preprocessor = Preprocessor(**preprocessor_kwargs) if preprocess else None
         self.le = LabelEncoder()
@@ -201,8 +230,13 @@ class Mamut:
         self.y_train = None
         self.y_validation = None
         self.y_holdout = None
+        self.X_modeling_raw_ = None
+        self.y_modeling_raw_ = None
+        self.y_modeling_original_ = None
         self.X_train_raw_ = None
         self.X_validation_raw_ = None
+        self.y_train_raw_ = None
+        self.y_validation_raw_ = None
         self.X_holdout_raw_ = None
         self.y_holdout_original_ = None
         self.X_test = None
@@ -222,6 +256,12 @@ class Mamut:
         self.training_summary_ = None
         self.optuna_studies_ = None
         self.models_output_path_ = None
+        self.evidence_report_ = None
+        self.validation_integrity_ = None
+        self.leakage_checks_ = None
+        self.baseline_comparison_ = None
+        self.score_stability_ = None
+        self.selection_guidance_ = None
 
         self.ensemble_ = None
         self.greedy_ensemble_ = None
@@ -270,6 +310,12 @@ class Mamut:
         self.holdout_summary_ = None
         self.holdout_score_ = None
         self.models_output_path_ = None
+        self.evidence_report_ = None
+        self.validation_integrity_ = None
+        self.leakage_checks_ = None
+        self.baseline_comparison_ = None
+        self.score_stability_ = None
+        self.selection_guidance_ = None
         self.imbalanced_ = False
 
         Mamut._check_categorical(y)
@@ -318,6 +364,10 @@ class Mamut:
         else:
             y_holdout_encoded = None
 
+        self.X_modeling_raw_ = X_modeling.copy()
+        self.y_modeling_raw_ = y_modeling.copy()
+        self.y_modeling_original_ = y_modeling_original.copy()
+
         (
             X_train_raw,
             X_validation_raw,
@@ -333,6 +383,8 @@ class Mamut:
 
         X_train = X_train_raw
         X_validation = X_validation_raw
+        self.y_train_raw_ = y_train.copy()
+        self.y_validation_raw_ = y_validation.copy()
         if self.preprocess:
             X_train, y_train = self.preprocessor.fit_transform(X_train, y_train)
             X_validation = self.preprocessor.transform(X_validation)
@@ -561,6 +613,7 @@ class Mamut:
         self,
         n_top_models: int = 3,
         dataset: Literal["auto", "validation", "holdout"] = "auto",
+        include_evidence: bool = True,
     ) -> None:
         """
         Evaluates the fitted models.
@@ -568,6 +621,11 @@ class Mamut:
         self._check_fitted()
         X_evaluation, y_evaluation, evaluation_summary, evaluation_dataset = (
             self._get_evaluation_dataset(dataset)
+        )
+        evidence_report = (
+            self.generate_evidence(dataset=evaluation_dataset)
+            if include_evidence
+            else None
         )
 
         evaluator = ModelEvaluator(
@@ -597,10 +655,57 @@ class Mamut:
                 "model"
             ].__class__.__name__,
             rank_by_metric=evaluation_dataset == "validation",
+            evidence_report=evidence_report,
         )
 
         evaluator.evaluate_to_html(evaluation_summary)
         evaluator.plot_results_in_notebook()
+
+    def generate_evidence(
+        self,
+        dataset: Literal["auto", "validation", "holdout"] = "auto",
+    ) -> dict:
+        self._check_fitted()
+        _, _, _, evaluation_dataset = self._get_evaluation_dataset(dataset)
+
+        if evaluation_dataset == "holdout":
+            X_evaluation_raw = self.X_holdout_raw_
+            y_evaluation_raw = pd.Series(self.y_holdout, index=X_evaluation_raw.index)
+        else:
+            X_evaluation_raw = self.X_validation_raw_
+            y_evaluation_raw = self.y_validation_raw_
+
+        self.evidence_report_ = build_evidence_report(
+            X=self.X_modeling_raw_,
+            y=self.y_modeling_raw_,
+            y_leakage=self.y_modeling_original_,
+            X_train=self.X_train_raw_,
+            y_train=self.y_train_raw_,
+            X_evaluation=X_evaluation_raw,
+            y_evaluation=y_evaluation_raw,
+            selected_estimator=self.best_model_.named_steps["model"],
+            metric_name=self.score_metric_name,
+            binary=self.binary,
+            preprocessor_factory=self._make_evidence_preprocessor,
+            evaluation_dataset=evaluation_dataset,
+            holdout_available=self.X_holdout is not None,
+            cv_splits=self.evidence_cv_splits,
+            cv_repeats=self.evidence_cv_repeats,
+            confidence_level=self.evidence_confidence_level,
+            random_state=self.random_state,
+            practical_margin=self.evidence_practical_margin,
+        )
+        self.validation_integrity_ = self.evidence_report_["validation_integrity"]
+        self.leakage_checks_ = self.evidence_report_["leakage_checks"]
+        self.baseline_comparison_ = self.evidence_report_["baseline_comparison"]
+        self.score_stability_ = self.evidence_report_["score_stability"]
+        self.selection_guidance_ = self.evidence_report_["selection_guidance"]
+        return self.evidence_report_
+
+    def _make_evidence_preprocessor(self):
+        if not self.preprocess:
+            return None
+        return Preprocessor(**self.preprocessor_kwargs)
 
     def _get_evaluation_dataset(self, dataset: str):
         if dataset not in {"auto", "validation", "holdout"}:

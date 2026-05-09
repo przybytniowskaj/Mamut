@@ -115,6 +115,56 @@ You can also provide an explicit holdout set:
 Use holdout scores for final reporting. Use validation scores for model
 selection and debugging.
 
+Evidence Checks
+---------------
+
+``evaluate`` includes an evidence layer by default. It is designed to answer
+whether the reported model score is trustworthy enough to take seriously, not
+only which model has the largest score.
+
+The evidence layer includes:
+
+* basic leakage checks for target-like columns, exact target copies, identifier
+  columns, duplicate feature rows, and class imbalance
+* baseline comparison against dummy, logistic regression, and random forest
+  models
+* repeated stratified cross-validation for score stability
+* approximate t-intervals over repeated fold scores, clipped to the valid
+  metric range
+* evidence-guided selection guidance that confirms, challenges, or blocks trust
+  in the validation-selected model
+
+.. code-block:: python
+
+   mamut = Mamut(
+       holdout_size=0.2,
+       evidence_cv_splits=5,
+       evidence_cv_repeats=3,
+       evidence_confidence_level=0.95,
+   )
+   mamut.fit(X, y)
+   mamut.evaluate()
+
+You can compute the evidence tables without writing a report:
+
+.. code-block:: python
+
+   evidence = mamut.generate_evidence()
+   mamut.baseline_comparison_
+   mamut.score_stability_
+   mamut.leakage_checks_
+   mamut.selection_guidance_
+
+The score stability check refits the selected estimator and baseline models
+with fold-local preprocessing. It does not retune hyperparameters inside each
+fold, so treat it as a stability diagnostic rather than a full nested
+cross-validation benchmark.
+
+The evidence-guided selection table is intentionally conservative. If a
+baseline beats the selected model on final holdout data, MAMUT challenges the
+selection but does not silently promote the holdout winner. Use that challenge
+to rerun model selection or reserve a new final holdout before deployment.
+
 Reproducibility
 ---------------
 

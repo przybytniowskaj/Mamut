@@ -182,6 +182,20 @@ def _generate_ensemble_list(ensemble: Pipeline) -> str:
     return html_list
 
 
+def _evidence_table_to_html(table: pd.DataFrame) -> str:
+    if table is None or table.empty:
+        return "<p>No evidence results available.</p>"
+
+    display_table = table.copy()
+    numeric_columns = display_table.select_dtypes(include="number").columns
+    for column in numeric_columns:
+        display_table[column] = display_table[column].map(
+            lambda value: "" if pd.isna(value) else f"{value:.4f}"
+        )
+
+    return display_table.to_html(index=False, escape=False)
+
+
 class ModelEvaluator:
 
     report_template_path: str = os.path.join(os.path.dirname(__file__), "utils")
@@ -211,6 +225,7 @@ class ModelEvaluator:
         evaluation_dataset: str = "validation",
         selected_model_name: str = None,
         rank_by_metric: bool = True,
+        evidence_report: dict = None,
     ):
 
         self.models = models
@@ -242,6 +257,7 @@ class ModelEvaluator:
         self.evaluation_dataset = evaluation_dataset
         self.selected_model_name = selected_model_name
         self.rank_by_metric = rank_by_metric
+        self.evidence_report = evidence_report or {}
 
         self.report_output_path = os.path.join(os.getcwd(), "mamut_report")
         self.plot_output_path = os.path.join(self.report_output_path, "plots")
@@ -769,6 +785,22 @@ class ModelEvaluator:
             ),
             preprocessing_list=_generate_preprocessing_steps_html(
                 self.preprocessing_steps
+            ),
+            evidence_available=bool(self.evidence_report),
+            validation_integrity=_evidence_table_to_html(
+                self.evidence_report.get("validation_integrity")
+            ),
+            selection_guidance=_evidence_table_to_html(
+                self.evidence_report.get("selection_guidance")
+            ),
+            leakage_checks=_evidence_table_to_html(
+                self.evidence_report.get("leakage_checks")
+            ),
+            baseline_comparison=_evidence_table_to_html(
+                self.evidence_report.get("baseline_comparison")
+            ),
+            score_stability=_evidence_table_to_html(
+                self.evidence_report.get("score_stability")
             ),
         )
 

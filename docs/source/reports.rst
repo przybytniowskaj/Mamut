@@ -51,6 +51,13 @@ uses it automatically. Otherwise, the report clearly shows validation metrics:
 
    mamut.evaluate(n_top_models=3)
 
+Evidence sections are included by default. Disable them only when report speed
+matters more than validation diagnostics:
+
+.. code-block:: python
+
+   mamut.evaluate(include_evidence=False)
+
 The HTML report is written to:
 
 .. code-block:: text
@@ -71,6 +78,11 @@ The report includes:
 * system and Python environment details
 * dataset size, feature overview, missing rows, and class distribution
 * validation or holdout model comparison metrics and training durations
+* validation integrity checks
+* evidence-guided selection guidance
+* leakage risk checks
+* dummy, logistic regression, and random forest baseline comparison
+* repeated stratified cross-validation score stability with confidence intervals
 * ROC curve plots
 * confusion matrices
 * Optuna optimization history plots

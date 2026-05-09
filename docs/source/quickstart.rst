@@ -82,7 +82,8 @@ Generate a Report
 The report is written to ``mamut_report/`` in the current working directory.
 The method uses the holdout split automatically when one is available;
 otherwise, it clearly reports validation metrics. Generated plots are stored
-under ``mamut_report/plots/``.
+under ``mamut_report/plots/``. By default, the report also includes leakage
+checks, baseline comparison, and repeated validation score stability tables.
 
 Save the Best Model
 -------------------

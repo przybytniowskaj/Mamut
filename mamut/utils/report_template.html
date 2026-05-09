@@ -216,6 +216,58 @@
         {{ training_summary | safe }}
     </div>
 
+    {% if evidence_available %}
+    <div class="heading">
+        <h1>Model Evidence</h1>
+    </div>
+
+    <div class="heading2">
+        <h2>Validation Integrity</h2>
+    </div>
+    <div class="section">
+        <p>
+            This section records whether the report uses validation or final holdout data, summarizes the repeated
+            stratified validation design used for score stability checks, and lists high-signal leakage warnings.
+            Holdout metrics should be treated as final evidence; validation metrics should be treated as model
+            selection evidence.
+        </p>
+        {{ validation_integrity | safe }}
+        <h3>Evidence-Guided Selection</h3>
+        <p>
+            This table confirms or challenges the validation-selected model using the evidence below. A challenge is
+            advisory: final holdout evidence should trigger a rerun of model selection or a new final holdout, not an
+            automatic silent promotion.
+        </p>
+        {{ selection_guidance | safe }}
+        <h3>Leakage Checks</h3>
+        {{ leakage_checks | safe }}
+    </div>
+
+    <div class="heading2">
+        <h2>Baseline Comparison</h2>
+    </div>
+    <div class="section">
+        <p>
+            The selected MAMUT estimator is refit with fold-local preprocessing and compared against simple baselines
+            on the same {{ evaluation_dataset }} set. A useful model should clear these baselines by a practical margin,
+            not only by a small numerical difference.
+        </p>
+        {{ baseline_comparison | safe }}
+    </div>
+
+    <div class="heading2">
+        <h2>Score Stability</h2>
+    </div>
+    <div class="section">
+        <p>
+            Stability is estimated with repeated stratified cross-validation on the modeling data. Confidence intervals
+            are approximate t-intervals over fold scores, clipped to the valid metric range, and should be read as an
+            uncertainty signal, not as a formal guarantee of production performance.
+        </p>
+        {{ score_stability | safe }}
+    </div>
+    {% endif %}
+
     <div class="heading2">
         <h2>Receiver Operating Characteristic (ROC) Curve for top 3 models</h2>
     </div>
