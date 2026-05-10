@@ -1,0 +1,49 @@
+name: Security Audit
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+    paths:
+      - ".github/workflows/security.yml"
+      - "pyproject.toml"
+      - "uv.lock"
+      - "scripts/audit_dependencies.sh"
+  pull_request:
+    branches:
+      - main
+      - develop
+    paths:
+      - ".github/workflows/security.yml"
+      - "pyproject.toml"
+      - "uv.lock"
+      - "scripts/audit_dependencies.sh"
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version-file: ".python-version"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v8.1.0
+        with:
+          version: "0.11.6"
+          enable-cache: true
+
+      - name: Audit locked runtime dependencies
+        run: bash scripts/audit_dependencies.sh

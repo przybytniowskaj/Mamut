@@ -199,17 +199,74 @@
             respect to the metric: <b>{{ metric }}</b> for <b>{{ n_trials }}</b> iterations. Access any model's
             hyperparameters by getting the models from <i>mamut.raw_fitted_models_</i> field and running <i>.get_params()</i> on
             your model of interest. <br>
-            After tuning, all models were evaluated on the <b>test set</b> that was split from the original dataset.
-            The best model was <b><i>{{ best_model }}</i></b>.
+            After tuning, models were evaluated on the <b>{{ evaluation_dataset }} set</b>.
+            {% if evaluation_dataset == 'holdout' %}
+            This final holdout set was not used for model or ensemble selection; the selected model remains
+            <b><i>{{ best_model }}</i></b> based on validation performance.
+            {% else %}
+            The selected model was <b><i>{{ best_model }}</i></b> based on validation performance.
+            {% endif %}
         </p>
     </div>
 
     <div class="heading2">
-        <h2>Training Summary</h2>
+        <h2>Evaluation Summary</h2>
     </div>
     <div class="section">
         {{ training_summary | safe }}
     </div>
+
+    {% if evidence_available %}
+    <div class="heading">
+        <h1>Model Evidence</h1>
+    </div>
+
+    <div class="heading2">
+        <h2>Validation Integrity</h2>
+    </div>
+    <div class="section">
+        <p>
+            This section records whether the report uses validation or final holdout data, summarizes the repeated
+            stratified validation design used for score stability checks, and lists high-signal leakage warnings.
+            Holdout metrics should be treated as final evidence; validation metrics should be treated as model
+            selection evidence.
+        </p>
+        {{ validation_integrity | safe }}
+        <h3>Evidence-Guided Selection</h3>
+        <p>
+            This table confirms or challenges the validation-selected model using the evidence below. A challenge is
+            advisory: final holdout evidence should trigger a rerun of model selection or a new final holdout, not an
+            automatic silent promotion.
+        </p>
+        {{ selection_guidance | safe }}
+        <h3>Leakage Checks</h3>
+        {{ leakage_checks | safe }}
+    </div>
+
+    <div class="heading2">
+        <h2>Baseline Comparison</h2>
+    </div>
+    <div class="section">
+        <p>
+            The selected MAMUT estimator is refit with fold-local preprocessing and compared against simple baselines
+            on the same {{ evaluation_dataset }} set. A useful model should clear these baselines by a practical margin,
+            not only by a small numerical difference.
+        </p>
+        {{ baseline_comparison | safe }}
+    </div>
+
+    <div class="heading2">
+        <h2>Score Stability</h2>
+    </div>
+    <div class="section">
+        <p>
+            Stability is estimated with repeated stratified cross-validation on the modeling data. Confidence intervals
+            are approximate t-intervals over fold scores, clipped to the valid metric range, and should be read as an
+            uncertainty signal, not as a formal guarantee of production performance.
+        </p>
+        {{ score_stability | safe }}
+    </div>
+    {% endif %}
 
     <div class="heading2">
         <h2>Receiver Operating Characteristic (ROC) Curve for top 3 models</h2>
@@ -259,8 +316,8 @@
         </div>
     </div>
     <div class="section">
-        <p>The results of the powerful greedy ensemble created during the experiment
-        on the <b>test set</b> are available in the below table.</p>
+        <p>The results of the greedy ensemble created during the experiment
+        on the <b>{{ evaluation_dataset }} set</b> are available in the below table.</p>
         {{ ensemble_summary | safe }}
     </div>
     {% endif %}
@@ -288,7 +345,7 @@
     <div class="section">
 <!--        <p>-->
 <!--            Below you will see the SHAP values for the best model. SHAP values provide a way to interpret the impact of each feature on the model's output.-->
-<!--            The SHAP values are calculated using the <b>test set</b> and are used to explain the predictions of the model. On the beeswarm plot below,-->
+<!--            The SHAP values are calculated using the selected evaluation set and are used to explain the predictions of the model. On the beeswarm plot below,-->
 <!--            each point represents a single prediction, and the <b>color</b> represents the <b>feature value</b>. The <b>x-axis</b> represents the <b>SHAP value</b>, and on the-->
 <!--            <b>y-axis</b> are the <b>top 10 features</b>.-->
 <!--        </p>-->

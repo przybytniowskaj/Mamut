@@ -16,18 +16,35 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v6
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v6
         with:
-          python-version: '3.12.8'
+          python-version-file: ".python-version"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v8.1.0
+        with:
+          version: "0.11.6"
+          enable-cache: true
 
       - name: Install dependencies
-        run: |
-          pip install poetry
-          poetry install
+        run: uv sync --locked --all-groups
+
+      - name: Check dependency declarations
+        run: uv run deptry .
 
       - name: Run tests
+        run: uv run pytest
+
+      - name: Build package
+        run: uv build
+
+      - name: Check package metadata
+        run: uv run twine check dist/*
+
+      - name: Smoke test built wheel
         run: |
-          poetry run pytest
+          WHEEL="$(find dist -name 'mamut-*.whl' -print -quit)"
+          uv run --isolated --no-project --with "$WHEEL" python tests/smoke_package.py

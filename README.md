@@ -7,17 +7,23 @@
 [![Documentation Status](https://readthedocs.org/projects/mamut/badge/?version=latest)](https://mamut.readthedocs.io/en/latest/?badge=latest)
 [![Test Pipeline](https://github.com/przybytniowskaj/Mamut/actions/workflows/tests.yml/badge.svg)](https://github.com/przybytniowskaj/Mamut/actions/workflows/tests.yml)
 [![Pre-commit Pipeline](https://github.com/przybytniowskaj/Mamut/actions/workflows/pre-commit.yaml/badge.svg)](https://github.com/przybytniowskaj/Mamut/actions/workflows/pre-commit.yaml)
+[![Security Audit](https://github.com/przybytniowskaj/Mamut/actions/workflows/security.yml/badge.svg)](https://github.com/przybytniowskaj/Mamut/actions/workflows/security.yml)
 ![License](https://img.shields.io/github/license/przybytniowskaj/Mamut)
 
 ## Overview
-MAMUT is a Python toolkit that automates model selection and evaluation for **classification** tasks on tabular data. It bundles preprocessing, Optuna-driven hyperparameter optimization, model comparison, and reporting into a single workflow built on scikit-learn and XGBoost.
+MAMUT is a Python toolkit for transparent **classification** workflows on tabular data. It bundles preprocessing, Optuna-driven hyperparameter optimization, model comparison, validation diagnostics, and reporting into a single workflow built on scikit-learn and XGBoost.
+
+MAMUT is best used as a readable baseline and experiment report generator for beginners, small teams, and portfolio-scale projects. It is not positioned as a replacement for industrial AutoML systems such as AutoGluon, FLAML, or H2O AutoML; its value is in showing what was tried, how the result was validated, and whether simple baselines challenge the selected model.
 
 ## Key Features
 - End-to-end preprocessing: missing values, categorical encoding, skew correction, scaling, outlier filtering, imbalance handling (SMOTE/undersampling/SMOTETomek), optional feature selection, and PCA.
 - Model search across common classifiers (LogisticRegression, RandomForestClassifier, SVC, XGBClassifier, MLPClassifier, GaussianNB, KNeighborsClassifier).
 - Hyperparameter optimization with Optuna (TPE/Bayesian or random search).
+- Validation-based model selection with optional final holdout evaluation.
+- Evidence reporting: leakage checks, dummy/logistic/random-forest baselines, repeated stratified CV, and metric confidence intervals.
 - Report generation via `evaluate()` with metrics, plots, and SHAP explanations.
-- Saved artifacts: `fit()` stores fitted models; `evaluate()` writes an HTML report and plots to disk.
+- Configurable artifacts: `fit()` keeps models in memory by default and saves fitted models only when `save_models=True`.
+- Reproducible benchmark diagnostics via `scripts/benchmark_evidence.py`.
 
 ## Installation
 Python 3.12 is the target runtime (see `.python-version`).
@@ -29,22 +35,24 @@ pip install mamut
 
 From source:
 ```sh
+git clone https://github.com/przybytniowskaj/Mamut.git
+cd Mamut
 pip install -e .
 ```
 
-For development with Poetry:
+For development with uv:
 ```sh
-poetry install
+uv sync --all-groups
 ```
 
 ## Quickstart
 ```python
 from sklearn.datasets import load_iris
-from mamut.wrapper import Mamut
+from mamut import Mamut
 
 X, y = load_iris(as_frame=True, return_X_y=True)
 
-mamut = Mamut(n_iterations=5, optimization_method="bayes")
+mamut = Mamut(n_iterations=1, optimization_method="random_search")
 mamut.fit(X, y)
 
 preds = mamut.predict(X)
@@ -54,31 +62,48 @@ proba = mamut.predict_proba(X)
 ## Configuration Notes
 - With preprocessing enabled (default), pass `X` as a pandas `DataFrame` and `y` as a `Series`.
 - Targets must be categorical (float targets raise a `ValueError`).
-- `fit()` performs a stratified 80/20 train/test split controlled by `random_state`.
+- `fit()` performs a stratified train/validation split controlled by `validation_size` and `random_state`.
+- Set `holdout_size` or pass `X_holdout`/`y_holdout` to reserve final evaluation data that is not used for model or ensemble selection.
 - Select the optimization strategy with `optimization_method="bayes"` or `"random_search"`.
 - Control the search budget with `n_iterations`.
 - Exclude models by class name (e.g., `exclude_models=["SVC"]`).
 - Preprocessing options are passed directly into `Mamut(...)` (e.g., `pca=True`, `feature_selection=True`, `num_imputation="knn"`).
+- Use `save_models=True` to write fitted candidate pipelines under `./fitted_models/<timestamp>/`.
 - `score_metric` expects one of: `accuracy`, `precision`, `recall`, `f1`, `balanced_accuracy`, `jaccard`, `roc_auc_score`.
+- Configure evidence stability checks with `evidence_cv_splits`, `evidence_cv_repeats`, and `evidence_confidence_level`.
 
 ## Outputs and Reports
-- `mamut.best_model_`: best performing pipeline after `fit`.
-- `mamut.training_summary_`: per-model scores and timings.
+- `mamut.best_model_`: validation-selected best performing pipeline after `fit`.
+- `mamut.validation_summary_`: per-model validation scores and timings.
+- `mamut.holdout_summary_`: optional final holdout scores when holdout data is configured.
+- `mamut.evidence_report_`: validation integrity, evidence-guided selection, leakage checks, baseline comparison, and score stability tables generated by `evaluate()` or `generate_evidence()`.
 - `mamut.optuna_studies_`: Optuna studies keyed by model name.
-- `mamut.evaluate()`: writes an HTML report to `./mamut_report/report_<timestamp>.html` and stores plots in `./mamut_report/plots/`.
+- `mamut.evaluate()`: writes an HTML report to `./mamut_report/report_<timestamp>.html` and stores plots in `./mamut_report/plots/`. It uses holdout data automatically when available and includes evidence sections by default.
 - `mamut.save_best_model(path)`: writes the best model to an existing directory as a `.joblib` file.
-- `fit()` saves all fitted models to `./fitted_models/<timestamp>/` as `.joblib` files.
 
 ## Development
 ```sh
-poetry run pytest
-poetry run pre-commit run --all-files
-make -C docs html
+uv sync --all-groups
+uv run deptry .
+scripts/audit_dependencies.sh
+uv run pytest
+uv run pre-commit run --all-files
+uv run make -C docs html
+uv run sphinx-build -W --keep-going -b html docs/source docs/build/html-strict
+uv run python scripts/benchmark_evidence.py
+uv build
+uv run twine check dist/*
 ```
 
-## Examples and Docs
-- Notebooks: `walkthrough.ipynb` and `docs/source/notebooks/walkthrough.ipynb`.
+## Documentation
 - Documentation site: https://mamut.readthedocs.io/en/latest/
+- Quickstart: https://mamut.readthedocs.io/en/latest/quickstart.html
+- User guide: https://mamut.readthedocs.io/en/latest/user_guide.html
+- Reports and artifacts: https://mamut.readthedocs.io/en/latest/reports.html
+- Evidence benchmark: https://mamut.readthedocs.io/en/latest/benchmark_evidence.html
+- API reference: https://mamut.readthedocs.io/en/latest/mamut.html
+- Notebook walkthrough: `docs/source/notebooks/walkthrough.ipynb`
+- Changelog: `CHANGELOG.md`
 
 ## License
 MIT. See `LICENSE`.
