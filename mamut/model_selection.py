@@ -42,8 +42,8 @@ class ModelSelector:
         self,
         X_train,
         y_train,
-        X_test,
-        y_test,
+        X_validation,
+        y_validation,
         score_metric: Callable,
         exclude_models: Optional[List[str]] = None,
         optimization_method: Literal["random_search", "bayes"] = "bayes",
@@ -52,9 +52,9 @@ class ModelSelector:
     ):
 
         self.X_train = X_train
-        self.y_train = y_train
-        self.X_test = X_test
-        self.y_test = y_test
+        self.y_train = np.asarray(y_train)
+        self.X_validation = X_validation
+        self.y_validation = np.asarray(y_validation)
         if not exclude_models:
             exclude_models = []
 
@@ -71,14 +71,9 @@ class ModelSelector:
         self.binary = True if self.n_classes_ == 2 else False
         self.score_metric_name = copy(score_metric.__name__)
         self.roc = self.score_metric_name == "roc_auc_score"
-        if self.roc:
-            self.score_metric = lambda y_true, y_pred: score_metric(
-                y_true, y_pred, multi_class="ovr", average="weighted"
-            )
-        else:
-            self.score_metric = lambda y_true, y_pred: score_metric(
-                y_true.reshape(-1, 1), y_pred.reshape(-1, 1), average="weighted"
-            )
+        self.score_metric = lambda y_true, y_pred: self._compute_score(
+            score_metric, y_true, y_pred
+        )
 
         self.optuna_sampler = (
             TPESampler(seed=random_state)
@@ -87,6 +82,36 @@ class ModelSelector:
         )
         self.n_iterations = n_iterations
         self.SKF_ = StratifiedKFold(n_splits=5, shuffle=True, random_state=random_state)
+
+    @staticmethod
+    def _safe_index(data, idx):
+        if hasattr(data, "iloc"):
+            return data.iloc[idx]
+        return data[idx]
+
+    def _compute_score(self, score_metric, y_true, y_pred):
+        y_true = np.asarray(y_true)
+        y_pred = np.asarray(y_pred)
+
+        if self.roc:
+            if self.binary:
+                return score_metric(y_true, y_pred)
+            return score_metric(y_true, y_pred, multi_class="ovr", average="weighted")
+
+        if self.score_metric_name in {
+            "precision_score",
+            "recall_score",
+            "f1_score",
+            "jaccard_score",
+        }:
+            return score_metric(
+                y_true,
+                y_pred,
+                average="weighted",
+                zero_division=0,
+            )
+
+        return score_metric(y_true, y_pred)
 
     def objective(self, trial, model):
         if model.__class__.__name__ in model_param_dict:
@@ -105,7 +130,8 @@ class ModelSelector:
 
         cv_scores = []
         for train_idx, val_idx in self.SKF_.split(self.X_train, self.y_train):
-            X_train_fold, X_val_fold = self.X_train[train_idx], self.X_train[val_idx]
+            X_train_fold = self._safe_index(self.X_train, train_idx)
+            X_val_fold = self._safe_index(self.X_train, val_idx)
             y_train_fold, y_val_fold = self.y_train[train_idx], self.y_train[val_idx]
 
             model = model.__class__(**model.get_params())
@@ -144,10 +170,10 @@ class ModelSelector:
 
     def compare_models(self):
         best_model = None
-        score_for_best_model = 0
+        score_for_best_model = -np.inf
         params_for_best_model = None
         fitted_models = {}
-        training_summary = pd.DataFrame()
+        validation_summary = pd.DataFrame()
         studies = {}
 
         for model in self.models:
@@ -165,33 +191,35 @@ class ModelSelector:
 
             if self.roc:
                 if self.binary:
-                    score_on_test = self.score_metric(
-                        self.y_test.values, model.predict_proba(self.X_test)[:, 1]
+                    score_on_validation = self.score_metric(
+                        self.y_validation,
+                        model.predict_proba(self.X_validation)[:, 1],
                     )
                 else:
-                    score_on_test = self.score_metric(
-                        self.y_test.values, model.predict_proba(self.X_test)
+                    score_on_validation = self.score_metric(
+                        self.y_validation,
+                        model.predict_proba(self.X_validation),
                     )
             else:
-                score_on_test = self.score_metric(
-                    self.y_test.values, model.predict(self.X_test)
+                score_on_validation = self.score_metric(
+                    self.y_validation, model.predict(self.X_validation)
                 )
 
-            if score_on_test > score_for_best_model:
-                score_for_best_model = score_on_test
+            if score_on_validation > score_for_best_model:
+                score_for_best_model = score_on_validation
                 best_model = model
                 params_for_best_model = params
 
-            scores_on_test = self._score_model_with_metrics(model)
+            scores_on_validation = self._score_model_with_metrics(model)
 
-            training_summary = pd.concat(
+            validation_summary = pd.concat(
                 [
-                    training_summary,
+                    validation_summary,
                     pd.DataFrame(
                         [
                             {
                                 "model": model.__class__.__name__,
-                                **scores_on_test,
+                                **scores_on_validation,
                                 "duration": duration,
                             }
                         ]
@@ -212,7 +240,7 @@ class ModelSelector:
             params_for_best_model,
             score_for_best_model,
             fitted_models,
-            training_summary,
+            validation_summary,
             studies,
         )
 
@@ -222,28 +250,33 @@ class ModelSelector:
                 "The model is not fitted and can not be scored with any metric."
             )
 
-        y_pred = fitted_model.predict(self.X_test)
-        y_pred_proba = fitted_model.predict_proba(self.X_test)
+        y_pred = fitted_model.predict(self.X_validation)
+        y_pred_proba = fitted_model.predict_proba(self.X_validation)
         if self.binary:
             y_pred_proba = y_pred_proba[:, 1]
 
         results = {
-            "accuracy_score": accuracy_score(self.y_test, y_pred),
-            "balanced_accuracy_score": balanced_accuracy_score(self.y_test, y_pred),
+            "accuracy_score": accuracy_score(self.y_validation, y_pred),
+            "balanced_accuracy_score": balanced_accuracy_score(
+                self.y_validation, y_pred
+            ),
             "precision_score": precision_score(
-                self.y_test, y_pred, average="weighted", zero_division=0
+                self.y_validation, y_pred, average="weighted", zero_division=0
             ),
             "recall_score": recall_score(
-                self.y_test, y_pred, average="weighted", zero_division=0
+                self.y_validation, y_pred, average="weighted", zero_division=0
             ),
             "f1_score": f1_score(
-                self.y_test, y_pred, average="weighted", zero_division=0
+                self.y_validation, y_pred, average="weighted", zero_division=0
             ),
             "jaccard_score": jaccard_score(
-                self.y_test, y_pred, average="weighted", zero_division=0
+                self.y_validation, y_pred, average="weighted", zero_division=0
             ),
             "roc_auc_score": roc_auc_score(
-                self.y_test, y_pred_proba, multi_class="ovr", average="weighted"
+                self.y_validation,
+                y_pred_proba,
+                multi_class="ovr",
+                average="weighted",
             ),
         }
 

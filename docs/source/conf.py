@@ -5,6 +5,8 @@
 
 import os
 import sys
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as package_version
 
 from pygments.lexers import PythonLexer
 
@@ -15,7 +17,11 @@ sys.path.insert(0, os.path.abspath("../../"))
 project = "MAMUT"
 copyright = '2025, "Igor Kołodziej, Hubert Kowalski, Julia Przybytniowska"'
 author = '"Igor Kołodziej, Hubert Kowalski, Julia Przybytniowska"'
-release = "0.1.0"
+try:
+    release = package_version("mamut")
+except PackageNotFoundError:
+    release = "0.0.0"
+version = release
 
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
@@ -36,12 +42,17 @@ pygments_lexers = {
 }
 
 nbsphinx_codecell_lexer = "python"
+nbsphinx_execute = "never"
+language = "en"
 
 
 # -- Options for HTML output -------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
 
 html_theme = "sphinx_rtd_theme"
+html_title = f"MAMUT {release} Documentation"
+html_short_title = "MAMUT"
+html_baseurl = "https://mamut.readthedocs.io/en/latest/"
 html_logo = "_static/logo.webp"
 html_favicon = "_static/favicon.ico"
 html_static_path = ["_static"]
