@@ -425,7 +425,7 @@ wheels = [
 
 [[package]]
 name = "imbalanced-learn"
-version = "0.13.0"
+version = "0.14.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "joblib" },
@@ -435,9 +435,9 @@ dependencies = [
     { name = "sklearn-compat" },
     { name = "threadpoolctl" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/3c/61/3c121d506fe3d40a9117ef9b685fb94ffdf7b40d7ba6e1516afa11e4aa45/imbalanced_learn-0.13.0.tar.gz", hash = "sha256:d4a8d6372086982350d6de1c7e5b1ed5ece9e41bf93043b4d0e9ea1c422a6606", size = 531907, upload-time = "2024-12-20T16:50:23.477Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/c1/7d/f1384d3c0eefb5531b4dc05c191aba260f78e4d4bdd31a0c2a3394de5c8d/imbalanced_learn-0.14.1.tar.gz", hash = "sha256:46eeb5773a96b6fa92426356da66f3e4390a7ed8e715a633c6fb68ee4a3ccdcb", size = 1190412, upload-time = "2025-12-21T21:59:16.457Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/9d/41/721fec82606242a2072ee909086ff918dfad7d0199a9dfd4928df9c72494/imbalanced_learn-0.13.0-py3-none-any.whl", hash = "sha256:7eb5859f7827cb3babfa5789978c22fe36e56527d9c9768df2d864d98d9b40fe", size = 238383, upload-time = "2024-12-20T16:50:20.234Z" },
+    { url = "https://files.pythonhosted.org/packages/c7/b5/56f1ceb568676c0231d12b2fed17ebfd606dd1f627e7372aaed5dd56bd97/imbalanced_learn-0.14.1-py3-none-any.whl", hash = "sha256:fcdff8d27870d6992ea3496230788b97ff98e24302e7f6c598701da525ae440f", size = 235365, upload-time = "2025-12-21T21:59:14.959Z" },
 ]
 
 [[package]]
@@ -715,7 +715,7 @@ test = [
 
 [package.metadata]
 requires-dist = [
-    { name = "imbalanced-learn", specifier = ">=0.13.0,<0.14.0" },
+    { name = "imbalanced-learn", specifier = ">=0.14.1,<0.15.0" },
     { name = "jinja2", specifier = ">=3.0.2,<4.0.0" },
     { name = "joblib", specifier = ">=1.4.2,<2.0.0" },
     { name = "matplotlib", specifier = ">=3.10.0,<4.0.0" },
