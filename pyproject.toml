@@ -3,9 +3,12 @@ name = "mamut"
 version = "0.2.0"
 description = "Transparent tabular classification workflows with model-selection evidence"
 authors = [
-    { name = "Igor Kolodziej", email = "igor.kolodziej@proton.me" },
+    { name = "Igor Kolodziej" },
     { name = "Hubert Kowalski" },
     { name = "Julia Przybytniowska" },
+]
+maintainers = [
+    { name = "Igor Kolodziej", email = "igor.kolodziej@proton.me" },
 ]
 license = "MIT"
 readme = "README.md"
