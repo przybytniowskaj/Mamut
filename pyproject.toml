@@ -1,6 +1,6 @@
 [project]
 name = "mamut"
-version = "0.2.0"
+version = "0.2.1"
 description = "Transparent tabular classification workflows with model-selection evidence"
 authors = [
     { name = "Igor Kolodziej" },
