@@ -117,6 +117,26 @@ You can also provide an explicit holdout set:
 Use holdout scores for final reporting. Use validation scores for model
 selection and debugging.
 
+Final Refit
+-----------
+
+By default, ``best_model_`` is the estimator selected on the validation split.
+This keeps the selected model aligned with the validation evidence. If you want
+the public prediction pipeline to refit on all non-holdout modeling data after
+selection, set ``refit_final_model=True``:
+
+.. code-block:: python
+
+   mamut = Mamut(
+       holdout_size=0.2,
+       refit_final_model=True,
+       random_state=42,
+   )
+   mamut.fit(X, y)
+
+The final refit never uses holdout rows. Use this option for deployment
+artifacts after you have accepted the validation and holdout diagnostics.
+
 Prediction Contract
 -------------------
 
@@ -166,6 +186,17 @@ You can compute the evidence tables without writing a report:
    mamut.score_stability_
    mamut.leakage_checks_
    mamut.selection_guidance_
+
+For lightweight evaluation in scripts or CI, disable expensive or file-writing
+outputs while keeping evidence generation enabled:
+
+.. code-block:: python
+
+   result = mamut.evaluate(
+       include_shap=False,
+       write_html=False,
+       save_plots=False,
+   )
 
 The score stability check refits the selected estimator and baseline models
 with fold-local preprocessing. It does not retune hyperparameters inside each

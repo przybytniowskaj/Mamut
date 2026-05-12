@@ -9,7 +9,7 @@ MAMUT includes a lightweight benchmark script for release diagnostics. The goal
 is not to claim state-of-the-art AutoML performance. The goal is to verify that
 the selected model beats trivial baselines, that stronger baselines are visible
 when they challenge the selection, and that score stability is reported with
-confidence intervals.
+approximate score intervals.
 
 Run the benchmark from the repository root:
 
@@ -27,11 +27,11 @@ The default run uses:
 * three-fold repeated stratified CV with one repeat for score stability
 * a lightweight candidate set that excludes SVC, MLP, and XGBoost
 
-Current Diagnostic Output
+Example Diagnostic Output
 -------------------------
 
 The following output was generated from the locked development environment for
-the ``0.2.0`` release pass:
+a release validation pass:
 
 .. code-block:: text
 

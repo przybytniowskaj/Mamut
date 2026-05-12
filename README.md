@@ -20,7 +20,7 @@ MAMUT is best used as a readable baseline and experiment report generator for be
 - Model search across common classifiers (LogisticRegression, RandomForestClassifier, SVC, XGBClassifier, MLPClassifier, GaussianNB, KNeighborsClassifier).
 - Hyperparameter optimization with Optuna (TPE/Bayesian or random search).
 - Validation-based model selection with optional final holdout evaluation.
-- Evidence reporting: leakage checks, dummy/logistic/random-forest baselines, repeated stratified CV, and metric confidence intervals.
+- Evidence reporting: leakage checks, dummy/logistic/random-forest baselines, repeated stratified CV, and approximate score intervals.
 - Report generation via `evaluate()` with metrics, plots, and SHAP explanations.
 - Configurable artifacts: `fit()` keeps models in memory by default and saves fitted models only when `save_models=True`.
 - Reproducible benchmark diagnostics via `scripts/benchmark_evidence.py`.
@@ -37,7 +37,7 @@ From source:
 ```sh
 git clone https://github.com/przybytniowskaj/Mamut.git
 cd Mamut
-pip install -e .
+uv sync --all-groups
 ```
 
 For development with uv:
@@ -52,11 +52,17 @@ from mamut import Mamut
 
 X, y = load_iris(as_frame=True, return_X_y=True)
 
-mamut = Mamut(n_iterations=1, optimization_method="random_search")
+mamut = Mamut(
+    n_iterations=1,
+    optimization_method="random_search",
+    holdout_size=0.2,
+    random_state=42,
+)
 mamut.fit(X, y)
 
-preds = mamut.predict(X)
-proba = mamut.predict_proba(X)
+preds = mamut.predict(X.head())
+proba = mamut.predict_proba(X.head())
+report = mamut.evaluate(include_shap=False, write_html=False, save_plots=False)
 ```
 
 ## Configuration Notes
@@ -71,6 +77,7 @@ proba = mamut.predict_proba(X)
 - Unknown categorical levels at prediction time are ignored by the one-hot encoder instead of failing the prediction.
 - Set `verbose=True` to show model-search progress logging and Optuna progress bars.
 - Use `save_models=True` to write fitted candidate pipelines under `./fitted_models/<timestamp>/`.
+- Use `refit_final_model=True` only after you accept validation and holdout diagnostics; the final refit uses all non-holdout modeling data and never uses holdout rows.
 - `score_metric` expects one of: `accuracy`, `precision`, `recall`, `f1`, `balanced_accuracy`, `jaccard`, `roc_auc_score`.
 - Configure evidence stability checks with `evidence_cv_splits`, `evidence_cv_repeats`, and `evidence_confidence_level`.
 
