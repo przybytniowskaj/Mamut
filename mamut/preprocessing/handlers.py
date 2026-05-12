@@ -231,7 +231,7 @@ def handle_categorical(
             Names of the one-hot encoded features.
     """
     X = X.copy()
-    encoder = OneHotEncoder(drop="first", handle_unknown="error", sparse_output=False)
+    encoder = OneHotEncoder(drop="first", handle_unknown="ignore", sparse_output=False)
     encoder.fit(X[feature_names])
     encoded_features = encoder.transform(X[feature_names])
     ohe_feature_names = encoder.get_feature_names_out(feature_names)
@@ -310,7 +310,7 @@ def handle_selection(
     )
     selector.fit(X, y)
     X_selected = selector.transform(X)
-    selected_features = X.columns[selector.get_support()]
+    selected_features = X.columns[selector.get_support()].tolist()
     X_selected_df = pd.DataFrame(X_selected, columns=selected_features, index=X.index)
 
     feature_importances = selector.estimator_.feature_importances_

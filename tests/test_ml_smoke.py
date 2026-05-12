@@ -83,12 +83,14 @@ def test_mamut_fit_predict_with_preprocessing_smoke(tmp_path, monkeypatch):
 
     fitted_model = mamut.fit(X, y)
     predictions = mamut.predict(X.head(10))
+    public_model_predictions = fitted_model.predict(X.head(10))
     probabilities = mamut.predict_proba(X.head(10))
     preprocessing_report = mamut.preprocessor.report()
 
     assert fitted_model is mamut.best_model_
     assert predictions.shape == (10,)
     assert set(predictions).issubset({"yes", "no"})
+    assert set(public_model_predictions).issubset({"yes", "no"})
     assert probabilities.shape == (10, 2)
     assert {"imputation", "category_encoding", "scaling"}.issubset(preprocessing_report)
     assert not (tmp_path / "fitted_models").exists()
@@ -114,6 +116,27 @@ def test_mamut_fit_can_save_model_artifacts_when_requested(tmp_path, monkeypatch
     assert list((tmp_path / "fitted_models").glob("*/GaussianNB.joblib"))
 
 
+def test_mamut_predict_tolerates_unseen_categories(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    X, y = _mixed_classification_frame()
+    mamut = Mamut(
+        exclude_models=_exclude_all_except("GaussianNB"),
+        n_iterations=1,
+        optimization_method="random_search",
+        random_state=42,
+        num_imputation="mean",
+        cat_imputation="most_frequent",
+    )
+    mamut.fit(X, y)
+    X_new = X.head(4).copy()
+    X_new["segment"] = "never_seen"
+
+    predictions = mamut.predict(X_new)
+
+    assert predictions.shape == (4,)
+    assert set(predictions).issubset({"yes", "no"})
+
+
 def test_mamut_xgboost_smoke(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     monkeypatch.setitem(
@@ -134,6 +157,49 @@ def test_mamut_xgboost_smoke(tmp_path, monkeypatch):
 
     assert "XGBClassifier" in mamut.raw_fitted_models_
     assert predictions.shape == (8,)
+
+
+def test_mamut_can_refit_selected_model_on_modeling_data(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    X, y = _numeric_classification_frame()
+    mamut = Mamut(
+        exclude_models=_exclude_all_except("GaussianNB"),
+        n_iterations=1,
+        optimization_method="random_search",
+        random_state=42,
+        holdout_size=0.2,
+        refit_final_model=True,
+    )
+
+    mamut.fit(X, y)
+
+    assert mamut.final_estimator_ is mamut.selected_estimator_
+    assert mamut.final_preprocessor_ is not None
+    assert mamut.holdout_score_ is not None
+    assert mamut.predict(X.head(6)).shape == (6,)
+
+
+def test_public_ensemble_predictions_use_original_labels(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    X, y = _mixed_classification_frame()
+    keep_models = {"GaussianNB", "KNeighborsClassifier"}
+    mamut = Mamut(
+        exclude_models=[
+            name for name in model_selection.model_param_dict if name not in keep_models
+        ],
+        n_iterations=1,
+        optimization_method="random_search",
+        random_state=42,
+        num_imputation="mean",
+        cat_imputation="most_frequent",
+    )
+    mamut.fit(X, y)
+
+    ensemble = mamut.create_ensemble()
+    greedy_ensemble = mamut.create_greedy_ensemble(max_models=2)
+
+    assert set(ensemble.predict(X.head(6))).issubset({"yes", "no"})
+    assert set(greedy_ensemble.predict(X.head(6))).issubset({"yes", "no"})
 
 
 def test_mamut_evaluate_uses_holdout_when_available(tmp_path, monkeypatch):
@@ -170,6 +236,38 @@ def test_mamut_evaluate_uses_holdout_when_available(tmp_path, monkeypatch):
     assert "baseline_comparison" in captured["evidence_report"]
     assert "score_stability" in captured["evidence_report"]
     assert "selection_guidance" in captured["evidence_report"]
+
+
+def test_mamut_evaluate_handles_mixed_data_and_can_skip_heavy_artifacts(
+    tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    X, y = _mixed_classification_frame()
+    mamut = Mamut(
+        exclude_models=_exclude_all_except("GaussianNB"),
+        n_iterations=1,
+        optimization_method="random_search",
+        random_state=42,
+        num_imputation="mean",
+        cat_imputation="most_frequent",
+        evidence_cv_splits=2,
+        evidence_cv_repeats=1,
+    )
+    mamut.fit(X, y)
+
+    result = mamut.evaluate(
+        n_top_models=1,
+        include_evidence=True,
+        include_shap=False,
+        write_html=False,
+        save_plots=False,
+        output_dir="custom_report",
+    )
+
+    assert result["report_path"] is None
+    assert result["plot_output_path"] is None
+    assert result["evidence_available"] is True
+    assert not (tmp_path / "custom_report").exists()
 
 
 def test_mamut_evaluate_generates_report_and_shap_artifacts(tmp_path, monkeypatch):

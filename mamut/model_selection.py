@@ -1,4 +1,5 @@
 import ast
+import logging
 import time
 import warnings
 from copy import copy
@@ -36,6 +37,18 @@ from mamut.utils.utils import adjust_search_spaces, model_param_dict, sample_par
 optuna.logging.set_verbosity(optuna.logging.WARNING)
 warnings.filterwarnings("ignore", category=ConvergenceWarning)
 
+log = logging.getLogger(__name__)
+
+MODEL_REGISTRY = {
+    "LogisticRegression": LogisticRegression,
+    "RandomForestClassifier": RandomForestClassifier,
+    "SVC": SVC,
+    "XGBClassifier": XGBClassifier,
+    "MLPClassifier": MLPClassifier,
+    "GaussianNB": GaussianNB,
+    "KNeighborsClassifier": KNeighborsClassifier,
+}
+
 
 class ModelSelector:
     def __init__(
@@ -49,6 +62,7 @@ class ModelSelector:
         optimization_method: Literal["random_search", "bayes"] = "bayes",
         n_iterations: int = 50,
         random_state: Optional[int] = 42,
+        verbose: bool = False,
     ):
 
         self.X_train = X_train
@@ -59,13 +73,9 @@ class ModelSelector:
             exclude_models = []
 
         self.models = [
-            (
-                eval(model)(random_state=random_state)
-                if "random_state" in eval(model)().get_params()
-                else eval(model)()
-            )
-            for model in model_param_dict.keys()
-            if model not in exclude_models
+            self._instantiate_model(model_name, random_state=random_state)
+            for model_name in model_param_dict.keys()
+            if model_name not in exclude_models
         ]
         self.n_classes_ = len(np.unique(y_train))
         self.binary = True if self.n_classes_ == 2 else False
@@ -81,7 +91,16 @@ class ModelSelector:
             else RandomSampler(seed=random_state)
         )
         self.n_iterations = n_iterations
+        self.verbose = verbose
         self.SKF_ = StratifiedKFold(n_splits=5, shuffle=True, random_state=random_state)
+
+    @staticmethod
+    def _instantiate_model(model_name: str, random_state: Optional[int]):
+        model_class = MODEL_REGISTRY[model_name]
+        model = model_class()
+        if "random_state" in model.get_params():
+            return model_class(random_state=random_state)
+        return model
 
     @staticmethod
     def _safe_index(data, idx):
@@ -155,7 +174,7 @@ class ModelSelector:
         study.optimize(
             lambda trial: self.objective(trial, model),
             n_trials=self.n_iterations,
-            show_progress_bar=True,
+            show_progress_bar=self.verbose,
         )
         end_time = time.time()
         duration = end_time - start_time
@@ -177,10 +196,14 @@ class ModelSelector:
         studies = {}
 
         for model in self.models:
-            print(f"Optimizing model: {model.__class__.__name__}")
+            log.info("Optimizing model: %s", model.__class__.__name__)
             params, score, duration, study = self.optimize_model(model)
-            print(
-                f"Best parameters: {params}, score: {score:.4f} {self.score_metric_name}\n"
+            log.info(
+                "Best parameters for %s: %s, score: %.4f %s",
+                model.__class__.__name__,
+                params,
+                score,
+                self.score_metric_name,
             )
 
             model.set_params(**params)
@@ -228,11 +251,12 @@ class ModelSelector:
                 ignore_index=True,
             )
 
-        print(
-            f"Found best model: {best_model.__class__.__name__} with parameters {params_for_best_model} \n"
-            f"and score {score_for_best_model:.4f} {self.score_metric_name}. \n"
-            f"To access your best model use: mamut.best_model_ field. \n"
-            f"To create a powerful ensemble of models use: create_greedy_ensemble() function. \n"
+        log.info(
+            "Found best model: %s with parameters %s and score %.4f %s.",
+            best_model.__class__.__name__,
+            params_for_best_model,
+            score_for_best_model,
+            self.score_metric_name,
         )
 
         return (

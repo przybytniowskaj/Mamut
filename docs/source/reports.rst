@@ -51,12 +51,29 @@ uses it automatically. Otherwise, the report clearly shows validation metrics:
 
    mamut.evaluate(n_top_models=3)
 
+Use a custom output directory when running multiple experiments:
+
+.. code-block:: python
+
+   result = mamut.evaluate(output_dir="reports/run_001")
+   result["report_path"]
+
 Evidence sections are included by default. Disable them only when report speed
 matters more than validation diagnostics:
 
 .. code-block:: python
 
    mamut.evaluate(include_evidence=False)
+
+SHAP and file artifacts can also be disabled for lightweight validation runs:
+
+.. code-block:: python
+
+   result = mamut.evaluate(
+       include_shap=False,
+       write_html=False,
+       save_plots=False,
+   )
 
 The HTML report is written to:
 

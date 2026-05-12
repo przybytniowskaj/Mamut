@@ -129,8 +129,14 @@ class Preprocessor:
         random_state : Optional[int]
             Random state for reproducibility.
         """
-        self.numeric_features = numeric_features
-        self.categorical_features = categorical_features
+        self._numeric_features_config = (
+            list(numeric_features) if numeric_features is not None else None
+        )
+        self._categorical_features_config = (
+            list(categorical_features) if categorical_features is not None else None
+        )
+        self.numeric_features = None
+        self.categorical_features = None
         self.num_imputation = num_imputation
         self.cat_imputation = cat_imputation
         self.feature_selection = feature_selection
@@ -170,6 +176,72 @@ class Preprocessor:
         self.n_missing_categorical = None
         self.lambdas_ = None
         self.feature_importances_ = None
+        self.original_feature_names_ = None
+        self.feature_names_out_ = None
+
+        self._reset_fit_state()
+
+    def _reset_fit_state(self) -> None:
+        self.numeric_features = (
+            list(self._numeric_features_config)
+            if self._numeric_features_config is not None
+            else None
+        )
+        self.categorical_features = (
+            list(self._categorical_features_config)
+            if self._categorical_features_config is not None
+            else None
+        )
+        self.imbalanced_ = False
+        self.missing_ = False
+        self.imbalanced_trans_ = None
+        self.outlier_trans_ = None
+        self.missing_num_trans_ = None
+        self.missing_cat_trans_ = None
+        self.cat_trans_ = None
+        self.skew_trans_ = None
+        self.skewed_ = False
+        self.scaler_ = None
+        self.sel_trans_ = None
+        self.ext_trans_ = None
+        self.fitted = False
+        self.skewed_feature_names_ = []
+        self.selected_features_ = None
+        self.pca_loadings_ = None
+        self.missing_numeric_ = False
+        self.missing_categorical_ = False
+        self.has_numeric_ = False
+        self.has_categorical_ = False
+        self.ohe_feature_names_ = []
+        self.report_ = None
+        self.n_missing_numeric = 0
+        self.n_missing_categorical = 0
+        self.lambdas_ = []
+        self.feature_importances_ = None
+        self.original_feature_names_ = None
+        self.feature_names_out_ = None
+
+    def _validate_feature_columns(self, X: pd.DataFrame) -> None:
+        configured_features = []
+        for feature_group in (self.numeric_features, self.categorical_features):
+            if feature_group is not None:
+                configured_features.extend(feature_group)
+
+        missing_features = sorted(set(configured_features) - set(X.columns))
+        if missing_features:
+            raise ValueError(
+                "Configured preprocessing features are not present in X: "
+                f"{missing_features}."
+            )
+
+        if self.numeric_features is not None and self.categorical_features is not None:
+            overlap = sorted(
+                set(self.numeric_features) & set(self.categorical_features)
+            )
+            if overlap:
+                raise ValueError(
+                    "Features cannot be both numeric and categorical: " f"{overlap}."
+                )
 
     def fit_transform(
         self, X: pd.DataFrame, y: pd.Series
@@ -193,11 +265,16 @@ class Preprocessor:
         Pipeline
             The fitted pipeline.
         """
+        self._reset_fit_state()
+        if not isinstance(X, pd.DataFrame):
+            raise ValueError("Input data must be a pandas DataFrame.")
+        self._validate_feature_columns(X)
         self.report_ = dict()
+        self.original_feature_names_ = X.columns.tolist()
 
-        if not self.numeric_features:
+        if self.numeric_features is None:
             self.numeric_features = X.select_dtypes(include="number").columns.tolist()
-        if not self.categorical_features:
+        if self.categorical_features is None:
             self.categorical_features = X.select_dtypes(
                 exclude="number"
             ).columns.tolist()
@@ -262,6 +339,7 @@ class Preprocessor:
             X, self.cat_trans_, self.ohe_feature_names_ = handle_categorical(
                 X, self.categorical_features
             )
+            self.ohe_feature_names_ = list(self.ohe_feature_names_)
             self.report_["category_encoding"] = {
                 "transformer": self.cat_trans_.__class__.__name__,
                 "encoded_feature_names": self.ohe_feature_names_,
@@ -338,6 +416,16 @@ class Preprocessor:
                 }
 
         self.skewed_ = len(self.skewed_feature_names_) > 0
+        if self.pca:
+            self.feature_names_out_ = [
+                f"PC{i + 1}" for i in range(self.pca_loadings_.shape[0])
+            ]
+        elif isinstance(X, pd.DataFrame):
+            self.feature_names_out_ = X.columns.tolist()
+        else:
+            self.feature_names_out_ = [
+                f"feature_{i}" for i in range(np.asarray(X).shape[1])
+            ]
         self.fitted = True
 
         if isinstance(X, pd.DataFrame):
@@ -394,8 +482,9 @@ class Preprocessor:
             X[self.numeric_features] = self.scaler_.transform(X[self.numeric_features])
 
         if self.feature_selection:
-            X = self.sel_trans_.transform(X)
-            X = pd.DataFrame(X, columns=self.selected_features_)
+            index = X.index
+            selected = self.sel_trans_.transform(X)
+            X = pd.DataFrame(selected, columns=self.selected_features_, index=index)
 
         if self.pca:
             X = self.ext_trans_.transform(X)

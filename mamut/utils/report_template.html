@@ -168,7 +168,7 @@
             </div>
         </div>
     </div>
-    {% if pca %}
+    {% if pca and plots_available %}
     <div class="heading2">
         <h2>PCA Components</h2>
     </div>
@@ -268,6 +268,7 @@
     </div>
     {% endif %}
 
+    {% if plots_available %}
     <div class="heading2">
         <h2>Receiver Operating Characteristic (ROC) Curve for top 3 models</h2>
     </div>
@@ -290,6 +291,7 @@
         <img src="plots/hyperparameter_tuning_history_2.png" alt="Hyperparameter Tuning History 2" style="width: 32%;">
         <img src="plots/hyperparameter_tuning_history_3.png" alt="Hyperparameter Tuning History 3" style="width: 32%;">
     </div>
+    {% endif %}
 
     {% if is_ensemble %}
     <div class="heading">
@@ -325,6 +327,7 @@
     <div class="heading">
         <h1>Interpretability</h1>
     </div>
+    {% if plots_available %}
     <div class="heading2">
         <h2>Feature Importance</h2>
     </div>
@@ -338,7 +341,9 @@
         </p>
         <img src="plots/feature_importance.png" alt="Feature Importance">
     </div>
+    {% endif %}
 
+    {% if shap_available %}
     <div class="heading2">
         <h2>SHAP Values for Best Model</h2>
     </div>
@@ -376,6 +381,7 @@
 
         <img src="plots/shap_values.png" alt="SHAP Values">
     </div>
+    {% endif %}
 
 </body>
 </html>

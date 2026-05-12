@@ -71,6 +71,8 @@ Set the optimization method and iteration budget at initialization:
 
 Use ``optimization_method="random_search"`` for a simpler random search. Use
 ``optimization_method="bayes"`` for Optuna's tree-structured Parzen estimator.
+Set ``verbose=True`` when you want model-search progress logging and Optuna
+progress bars.
 
 Metrics
 -------
@@ -114,6 +116,16 @@ You can also provide an explicit holdout set:
 
 Use holdout scores for final reporting. Use validation scores for model
 selection and debugging.
+
+Prediction Contract
+-------------------
+
+``Mamut.predict`` and ``mamut.best_model_.predict`` return the original target
+labels, even though MAMUT encodes labels internally for estimator training.
+``predict_proba`` returns estimator probabilities in the class order exposed by
+the fitted public model. Unknown categorical levels at prediction time are
+encoded as all zeros for that categorical feature group instead of raising an
+error.
 
 Evidence Checks
 ---------------

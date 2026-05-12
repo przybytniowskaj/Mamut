@@ -5,7 +5,7 @@ import platform
 import time
 import warnings
 from datetime import datetime
-from typing import List
+from typing import List, Optional
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -72,10 +72,21 @@ def _generate_dataset_overview(
 
     n_rows_missing = X.isnull().any(axis=1).sum()
 
-    # Calculate the number of outliers according to IsolationForest method:
-    # TODO: Check if correct
-    _, y_new, _ = handle_outliers(X, y, X.columns)
-    n_outliers = len(y) - len(y_new)
+    numeric_columns = X.select_dtypes(include="number").columns.tolist()
+    if numeric_columns:
+        y_for_outliers = pd.Series(y, index=X.index)
+        numeric_X = X[numeric_columns].dropna()
+        if len(numeric_X) > 1:
+            _, y_new, _ = handle_outliers(
+                numeric_X,
+                y_for_outliers.loc[numeric_X.index],
+                numeric_columns,
+            )
+            n_outliers = len(numeric_X) - len(y_new)
+        else:
+            n_outliers = 0
+    else:
+        n_outliers = 0
 
     dataset_basic_list = [n_observations, n_features, n_rows_missing, n_outliers]
 
@@ -166,7 +177,7 @@ def _generate_models_list(excluded_models: List[str]) -> List[str]:
 def _generate_ensemble_list(ensemble: Pipeline) -> str:
     if not ensemble:
         return ""
-    ensemble = ensemble.named_steps["model"]
+    ensemble = _unwrap_public_model(ensemble.named_steps["model"])
     base_estimators = ensemble.estimators
     meta = ensemble.final_estimator
     # Generate HTML list with ensemble contents:
@@ -180,6 +191,10 @@ def _generate_ensemble_list(ensemble: Pipeline) -> str:
     html_list += f"<li><strong>Meta Model:</strong> <ul><li>{meta.__class__.__name__}</li></ul></li>"
 
     return html_list
+
+
+def _unwrap_public_model(model):
+    return getattr(model, "estimator", model)
 
 
 def _evidence_table_to_html(table: pd.DataFrame) -> str:
@@ -220,12 +235,18 @@ class ModelEvaluator:
         preprocessing_steps,
         is_ensemble: bool,
         greedy_ensemble,
+        feature_names: Optional[List[str]] = None,
         excluded_models: List[str] = None,
         n_top_models: int = 3,
         evaluation_dataset: str = "validation",
         selected_model_name: str = None,
         rank_by_metric: bool = True,
         evidence_report: dict = None,
+        report_output_path: str = "mamut_report",
+        include_shap: bool = True,
+        shap_max_samples: Optional[int] = 200,
+        write_html: bool = True,
+        save_plots: bool = True,
     ):
 
         self.models = models
@@ -242,6 +263,7 @@ class ModelEvaluator:
         self.training_summary = training_summary
         self.pca_loadings = pca_loadings
         self.binary = binary
+        self.feature_names = feature_names
         self.is_ensemble = is_ensemble
         self.greedy_ensemble = greedy_ensemble
         if self.pca_loadings is not None:
@@ -258,15 +280,21 @@ class ModelEvaluator:
         self.selected_model_name = selected_model_name
         self.rank_by_metric = rank_by_metric
         self.evidence_report = evidence_report or {}
+        self.include_shap = include_shap
+        self.shap_max_samples = shap_max_samples
+        self.write_html = write_html
+        self.save_plots = save_plots
 
-        self.report_output_path = os.path.join(os.getcwd(), "mamut_report")
+        self.report_output_path = os.path.join(os.getcwd(), report_output_path)
         self.plot_output_path = os.path.join(self.report_output_path, "plots")
+        self.report_result_ = None
 
         self.n_top_models = n_top_models
 
-        # Create the report directory it doesn't exist:
-        os.makedirs(self.report_output_path, exist_ok=True)
-        os.makedirs(self.plot_output_path, exist_ok=True)
+        if self.write_html or self.save_plots:
+            os.makedirs(self.report_output_path, exist_ok=True)
+        if self.save_plots:
+            os.makedirs(self.plot_output_path, exist_ok=True)
         self._set_plt_style()
 
     def _set_plt_style(self) -> None:
@@ -493,13 +521,18 @@ class ModelEvaluator:
 
         importances = rf.feature_importances_
         indices = np.argsort(importances)[::-1]
+        feature_names = self._feature_names_for_model()
 
         if len(indices) > 10:
             indices = indices[:10]
 
         plt.figure(figsize=(10, 6))
         plt.bar(range(len(indices)), importances[indices], align="center")
-        plt.xticks(range(len(indices)), self.X.columns[indices], rotation=90)
+        plt.xticks(
+            range(len(indices)),
+            [feature_names[index] for index in indices],
+            rotation=90,
+        )
         plt.xlabel("Feature", fontsize=12)
         plt.ylabel("Importance", fontsize=12)
         plt.tight_layout()
@@ -518,11 +551,12 @@ class ModelEvaluator:
         return
 
     def _plot_shap_beeswarm(self, model, show: bool = False, save: bool = True) -> None:
+        X_background = self._shap_background()
         if model.__class__.__name__ in ["KNeighborsClassifier", "SVC", "MLPClassifier"]:
-            explainer = shap.Explainer(model.predict, self.X_train)
+            explainer = shap.Explainer(model.predict, X_background)
         else:
-            explainer = shap.Explainer(model, self.X_train)
-        shap_values = explainer(self.X_train)
+            explainer = shap.Explainer(model, X_background)
+        shap_values = explainer(X_background)
 
         if len(shap_values.shape) == 3:
             num_classes = shap_values.shape[2]
@@ -561,6 +595,20 @@ class ModelEvaluator:
                 plt.show()
             plt.close()
         return
+
+    def _feature_names_for_model(self) -> List[str]:
+        n_features = self.X_train.shape[1]
+        if self.feature_names and len(self.feature_names) == n_features:
+            return list(self.feature_names)
+        return [f"feature_{index}" for index in range(n_features)]
+
+    def _shap_background(self):
+        if (
+            self.shap_max_samples is None
+            or self.X_train.shape[0] <= self.shap_max_samples
+        ):
+            return self.X_train
+        return self.X_train[: self.shap_max_samples]
 
     def _plot_pca_loadings(self, show: bool = False, save: bool = True) -> None:
         if self.pca_loadings is None:
@@ -653,7 +701,7 @@ class ModelEvaluator:
         """
         if not greedy_ensemble:
             return ""
-        greedy_ensemble = greedy_ensemble.named_steps["model"]
+        greedy_ensemble = _unwrap_public_model(greedy_ensemble.named_steps["model"])
         results = self._score_model_with_metrics(greedy_ensemble)
 
         results_df = pd.DataFrame(
@@ -732,21 +780,23 @@ class ModelEvaluator:
             _generate_dataset_overview(self.X, self.y)
         )
 
-        if self.binary:
-            self._plot_roc_auc_curve(training_summary)
-        else:
-            self._plot_roc_auc_curve_multiclass(training_summary)
+        if self.save_plots:
+            if self.binary:
+                self._plot_roc_auc_curve(training_summary, save=True)
+            else:
+                self._plot_roc_auc_curve_multiclass(training_summary, save=True)
 
-        self._plot_confusion_matrices(training_summary)
-        self._plot_hyperparameter_tuning_history(training_summary)
-        self._plot_feature_importances()
+            self._plot_confusion_matrices(training_summary, save=True)
+            self._plot_hyperparameter_tuning_history(training_summary, save=True)
+            self._plot_feature_importances(save=True)
         best_model_name = selected_model_name
         best_model = self.models[best_model_name]
 
-        self._plot_shap_beeswarm(best_model)
+        if self.include_shap and self.save_plots:
+            self._plot_shap_beeswarm(best_model, save=True)
 
-        if self.pca:
-            self._plot_pca_loadings()
+        if self.pca and self.save_plots:
+            self._plot_pca_loadings(save=True)
 
         # Load the Jinja2 template placed in report_template_path:
         env = Environment(loader=FileSystemLoader(self.report_template_path))
@@ -777,6 +827,8 @@ class ModelEvaluator:
             feature_importance_method="Extra Trees Importances",
             pca=self.pca,
             binary=self.binary,
+            plots_available=self.save_plots,
+            shap_available=self.include_shap and self.save_plots,
             is_ensemble=self.is_ensemble,
             ensemble_method="Stacking",
             ensemble_list=_generate_ensemble_list(self.greedy_ensemble),
@@ -807,10 +859,21 @@ class ModelEvaluator:
         time_signature = datetime.strptime(
             time_signature.strip(), "%d %B %Y, %I:%M %p"
         ).strftime("%d-%m-%Y_%H-%M")
-        with open(
-            os.path.join(self.report_output_path, f"report_{time_signature}.html"), "w"
-        ) as f:
-            f.write(html_content)
+        report_path = os.path.join(
+            self.report_output_path, f"report_{time_signature}.html"
+        )
+        if self.write_html:
+            with open(report_path, "w") as f:
+                f.write(html_content)
+        else:
+            report_path = None
+
+        self.report_result_ = {
+            "report_path": report_path,
+            "plot_output_path": self.plot_output_path if self.save_plots else None,
+            "evaluation_dataset": self.evaluation_dataset,
+            "evidence_available": bool(self.evidence_report),
+        }
 
         return html_content
 
