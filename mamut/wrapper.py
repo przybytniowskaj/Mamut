@@ -7,7 +7,7 @@ from typing import List, Literal, Optional
 import joblib
 import numpy as np
 import pandas as pd
-from sklearn.base import clone
+from sklearn.base import BaseEstimator, ClassifierMixin, clone
 from sklearn.ensemble import (
     RandomForestClassifier,
     StackingClassifier,
@@ -28,13 +28,38 @@ from sklearn.preprocessing import LabelEncoder
 
 from mamut.evidence import build_evidence_report
 from mamut.preprocessing.preprocessing import Preprocessor
-from mamut.utils.utils import metric_dict
+from mamut.utils.utils import metric_dict, model_param_dict
 
 from .evaluation import ModelEvaluator
 from .model_selection import ModelSelector
 
 log = logging.getLogger(__name__)
-logging.basicConfig(level=logging.INFO)
+
+
+class LabelDecodedClassifier(BaseEstimator, ClassifierMixin):
+    """Wrap an encoded-label classifier so public predictions use original labels."""
+
+    def __init__(self, estimator, label_encoder):
+        self.estimator = estimator
+        self.label_encoder = label_encoder
+
+    def fit(self, X, y):
+        y_encoded = self.label_encoder.transform(y)
+        self.estimator.fit(X, y_encoded)
+        return self
+
+    def predict(self, X):
+        encoded_predictions = self.estimator.predict(X)
+        return self.label_encoder.inverse_transform(
+            np.asarray(encoded_predictions).astype(int)
+        )
+
+    def predict_proba(self, X):
+        return self.estimator.predict_proba(X)
+
+    @property
+    def classes_(self):
+        return self.label_encoder.classes_
 
 
 class Mamut:
@@ -133,12 +158,14 @@ class Mamut:
             "roc_auc_score",
         ] = "f1",
         optimization_method: Literal["random_search", "bayes"] = "bayes",
-        n_iterations: Optional[int] = 30,
+        n_iterations: int = 30,
         random_state: Optional[int] = 42,
         validation_size: float = 0.2,
         holdout_size: Optional[float] = None,
         save_models: bool = False,
         models_output_dir: str = "fitted_models",
+        refit_final_model: bool = False,
+        verbose: bool = False,
         evidence_cv_splits: int = 5,
         evidence_cv_repeats: int = 3,
         evidence_confidence_level: float = 0.95,
@@ -185,6 +212,17 @@ class Mamut:
         **preprocessor_kwargs
             Additional keyword arguments for the Preprocessor.
         """
+        if score_metric not in metric_dict:
+            valid_metrics = ", ".join(sorted(metric_dict))
+            raise ValueError(f"score_metric must be one of: {valid_metrics}.")
+        if optimization_method not in {"random_search", "bayes"}:
+            raise ValueError(
+                "optimization_method must be one of: 'random_search', 'bayes'."
+            )
+        if not isinstance(n_iterations, int) or n_iterations < 1:
+            raise ValueError(
+                "n_iterations must be an integer greater than or equal to 1."
+            )
         self._validate_split_size(validation_size, "validation_size")
         if holdout_size is not None:
             self._validate_split_size(holdout_size, "holdout_size")
@@ -198,6 +236,16 @@ class Mamut:
             )
         if evidence_practical_margin < 0:
             raise ValueError("evidence_practical_margin must be non-negative.")
+        exclude_models = exclude_models or []
+        unknown_models = sorted(set(exclude_models) - set(model_param_dict))
+        if unknown_models:
+            valid_models = ", ".join(model_param_dict)
+            raise ValueError(
+                f"exclude_models contains unsupported model names: {unknown_models}. "
+                f"Valid model names are: {valid_models}."
+            )
+        if len(exclude_models) >= len(model_param_dict):
+            raise ValueError("exclude_models cannot remove every supported model.")
 
         self.preprocess = preprocess
         self.imb_threshold = imb_threshold
@@ -211,6 +259,8 @@ class Mamut:
         self.holdout_size = holdout_size
         self.save_models = save_models
         self.models_output_dir = models_output_dir
+        self.refit_final_model = refit_final_model
+        self.verbose = verbose
         self.evidence_cv_splits = evidence_cv_splits
         self.evidence_cv_repeats = evidence_cv_repeats
         self.evidence_confidence_level = evidence_confidence_level
@@ -246,6 +296,10 @@ class Mamut:
 
         self.raw_fitted_models_ = None
         self.fitted_models_ = None
+        self.selected_estimator_ = None
+        self.validation_selected_estimator_ = None
+        self.final_preprocessor_ = None
+        self.final_estimator_ = None
         self.best_model_ = None
 
         self.best_score_ = None
@@ -262,6 +316,7 @@ class Mamut:
         self.baseline_comparison_ = None
         self.score_stability_ = None
         self.selection_guidance_ = None
+        self.report_result_ = None
 
         self.ensemble_ = None
         self.greedy_ensemble_ = None
@@ -303,6 +358,9 @@ class Mamut:
                 "Use either holdout_size or explicit X_holdout/y_holdout, not both."
             )
 
+        self.preprocessor = (
+            Preprocessor(**self.preprocessor_kwargs) if self.preprocess else None
+        )
         self.X_holdout = None
         self.y_holdout = None
         self.X_holdout_raw_ = None
@@ -316,6 +374,11 @@ class Mamut:
         self.baseline_comparison_ = None
         self.score_stability_ = None
         self.selection_guidance_ = None
+        self.report_result_ = None
+        self.selected_estimator_ = None
+        self.validation_selected_estimator_ = None
+        self.final_preprocessor_ = None
+        self.final_estimator_ = None
         self.imbalanced_ = False
 
         Mamut._check_categorical(y)
@@ -422,6 +485,7 @@ class Mamut:
             optimization_method=self.optimization_method,
             n_iterations=self.n_iterations,
             random_state=self.random_state,
+            verbose=self.verbose,
         )
 
         (
@@ -436,7 +500,7 @@ class Mamut:
         self.raw_fitted_models_ = fitted_models
         self.optuna_studies_ = studies
         self.fitted_models_ = [
-            Pipeline([("preprocessor", self.preprocessor), ("model", model)])
+            self._make_public_pipeline(model, self.preprocessor)
             for model in fitted_models.values()
         ]
 
@@ -450,8 +514,18 @@ class Mamut:
         ).reset_index(drop=True)
         self.best_validation_score_ = score_for_best_model
         self.best_score_ = score_for_best_model
-        self.best_model_ = Pipeline(
-            [("preprocessor", self.preprocessor), ("model", best_model)]
+        self.validation_selected_estimator_ = best_model
+        self.selected_estimator_ = best_model
+        public_preprocessor = self.preprocessor
+        if self.refit_final_model:
+            self.final_preprocessor_, self.final_estimator_ = (
+                self._refit_selected_model(best_model)
+            )
+            self.selected_estimator_ = self.final_estimator_
+            public_preprocessor = self.final_preprocessor_
+
+        self.best_model_ = self._make_public_pipeline(
+            self.selected_estimator_, public_preprocessor
         )
         self.validation_summary_ = validation_summary
         self.training_summary_ = validation_summary
@@ -463,11 +537,7 @@ class Mamut:
             else None
         )
         self.holdout_score_ = (
-            self._score_model_on_dataset(
-                self.best_model_.named_steps["model"],
-                self.X_holdout,
-                self.y_holdout,
-            )
+            self._score_selected_model_on_holdout()
             if self.X_holdout is not None
             else None
         )
@@ -489,10 +559,54 @@ class Mamut:
         self.models_output_path_ = models_dir
 
         for model in self.fitted_models_:
-            model_name = model.named_steps["model"].__class__.__name__
+            model_name = self._pipeline_model_name(model)
             model_path = os.path.join(models_dir, f"{model_name}.joblib")
             joblib.dump(model, model_path)
             log.info(f"Saved model {model_name} to {model_path}")
+
+    def _make_public_pipeline(self, estimator, preprocessor) -> Pipeline:
+        steps = []
+        if preprocessor is not None:
+            steps.append(("preprocessor", preprocessor))
+        steps.append(("model", LabelDecodedClassifier(estimator, self.le)))
+        return Pipeline(steps)
+
+    @staticmethod
+    def _pipeline_model_name(model: Pipeline) -> str:
+        final_step = model.named_steps["model"]
+        estimator = getattr(final_step, "estimator", final_step)
+        return estimator.__class__.__name__
+
+    def _refit_selected_model(self, selected_estimator):
+        preprocessor = (
+            Preprocessor(**self.preprocessor_kwargs) if self.preprocess else None
+        )
+        if preprocessor is not None:
+            X_final, y_final = preprocessor.fit_transform(
+                self.X_modeling_raw_.copy(),
+                self.y_modeling_raw_.copy(),
+            )
+        else:
+            X_final = self._as_model_input(self.X_modeling_raw_)
+            y_final = np.asarray(self.y_modeling_raw_)
+
+        final_estimator = clone(selected_estimator)
+        final_estimator.fit(X_final, y_final)
+        return preprocessor, final_estimator
+
+    def _score_selected_model_on_holdout(self) -> float:
+        if self.refit_final_model:
+            if self.final_preprocessor_ is not None:
+                X_holdout = self.final_preprocessor_.transform(self.X_holdout_raw_)
+            else:
+                X_holdout = self._as_model_input(self.X_holdout_raw_)
+            return self._score_model_on_dataset(
+                self.selected_estimator_, X_holdout, self.y_holdout
+            )
+
+        return self._score_model_on_dataset(
+            self.selected_estimator_, self.X_holdout, self.y_holdout
+        )
 
     @staticmethod
     def _as_model_input(data):
@@ -614,11 +728,21 @@ class Mamut:
         n_top_models: int = 3,
         dataset: Literal["auto", "validation", "holdout"] = "auto",
         include_evidence: bool = True,
-    ) -> None:
+        output_dir: str = "mamut_report",
+        include_shap: bool = True,
+        shap_max_samples: Optional[int] = 200,
+        display_plots: bool = False,
+        write_html: bool = True,
+        save_plots: bool = True,
+    ) -> dict:
         """
         Evaluates the fitted models.
         """
         self._check_fitted()
+        if not isinstance(n_top_models, int) or n_top_models < 1:
+            raise ValueError(
+                "n_top_models must be an integer greater than or equal to 1."
+            )
         X_evaluation, y_evaluation, evaluation_summary, evaluation_dataset = (
             self._get_evaluation_dataset(dataset)
         )
@@ -647,19 +771,30 @@ class Mamut:
             ),
             binary=self.model_selector.binary,
             preprocessing_steps=self.preprocessor.report() if self.preprocessor else {},
+            feature_names=(
+                self.preprocessor.feature_names_out_
+                if self.preprocessor and self.preprocessor.feature_names_out_
+                else self.X.columns.tolist()
+            ),
             n_top_models=n_top_models,
             is_ensemble=self.greedy_ensemble_ is not None,
             greedy_ensemble=self.greedy_ensemble_,
             evaluation_dataset=evaluation_dataset,
-            selected_model_name=self.best_model_.named_steps[
-                "model"
-            ].__class__.__name__,
+            selected_model_name=self.selected_estimator_.__class__.__name__,
             rank_by_metric=evaluation_dataset == "validation",
             evidence_report=evidence_report,
+            report_output_path=output_dir,
+            include_shap=include_shap,
+            shap_max_samples=shap_max_samples,
+            write_html=write_html,
+            save_plots=save_plots,
         )
 
         evaluator.evaluate_to_html(evaluation_summary)
-        evaluator.plot_results_in_notebook()
+        if display_plots:
+            evaluator.plot_results_in_notebook()
+        self.report_result_ = getattr(evaluator, "report_result_", None)
+        return self.report_result_
 
     def generate_evidence(
         self,
@@ -683,7 +818,7 @@ class Mamut:
             y_train=self.y_train_raw_,
             X_evaluation=X_evaluation_raw,
             y_evaluation=y_evaluation_raw,
-            selected_estimator=self.best_model_.named_steps["model"],
+            selected_estimator=self.selected_estimator_,
             metric_name=self.score_metric_name,
             binary=self.binary,
             preprocessor_factory=self._make_evidence_preprocessor,
@@ -751,7 +886,7 @@ class Mamut:
         """
         self._check_fitted()
         save_path = os.path.join(
-            path, f"{self.best_model_.named_steps['model'].__class__.__name__}.joblib"
+            path, f"{self._pipeline_model_name(self.best_model_)}.joblib"
         )
         joblib.dump(self.best_model_, save_path)
         log.info(f"Saved best model to {save_path}")
@@ -775,10 +910,10 @@ class Mamut:
         ensemble = VotingClassifier(
             estimators=[
                 (
-                    model.named_steps["model"].__class__.__name__,
-                    clone(model.named_steps["model"]),
+                    model_name,
+                    clone(model),
                 )
-                for model in self.fitted_models_
+                for model_name, model in self.raw_fitted_models_.items()
             ],
             voting=voting,
         )
@@ -786,9 +921,7 @@ class Mamut:
         y_pred = ensemble.predict(self.X_validation)
         score = self.score_metric(self.y_validation, y_pred)
 
-        self.ensemble_ = Pipeline(
-            [("preprocessor", self.preprocessor), ("model", ensemble)]
-        )
+        self.ensemble_ = self._make_public_pipeline(ensemble, self.preprocessor)
         log.info(
             f"Created ensemble with all models and voting='{voting}'. "
             f"Ensemble score on validation set: {score:.4f} {self.score_metric.__name__}"
@@ -817,15 +950,15 @@ class Mamut:
         self._check_fitted()
 
         # Initialize the ensemble with the best model
-        ensemble_models = [self.best_model_.named_steps["model"]]
+        ensemble_models = [self.validation_selected_estimator_]
         ensemble_scores = [self.best_score_]
 
         for _ in range(n_models - 1):
             best_score = -np.inf
             best_model = None
 
-            for model in self.fitted_models_:
-                candidate_ensemble = ensemble_models + [model.named_steps["model"]]
+            for model in self.raw_fitted_models_.values():
+                candidate_ensemble = ensemble_models + [model]
                 candidate_voting_clf = VotingClassifier(
                     estimators=[
                         (f"model_{i}", clone(m))
@@ -841,7 +974,7 @@ class Mamut:
 
                 if score > best_score:
                     best_score = score
-                    best_model = model.named_steps["model"]
+                    best_model = model
 
             ensemble_models.append(best_model)
             ensemble_scores.append(best_score)
@@ -857,9 +990,7 @@ class Mamut:
         score = self.score_metric(self.y_validation, y_pred)
 
         self.ensemble_models_ = ensemble_models
-        self.greedy_ensemble_ = Pipeline(
-            [("preprocessor", self.preprocessor), ("model", ensemble)]
-        )
+        self.greedy_ensemble_ = self._make_public_pipeline(ensemble, self.preprocessor)
 
         log.info(
             f"Created greedy ensemble with voting='{voting}' \n"
@@ -945,8 +1076,8 @@ class Mamut:
         )
 
         # Create a pipeline with the best ensemble
-        self.greedy_ensemble_ = Pipeline(
-            [("preprocessor", self.preprocessor), ("model", final_stacking_clf)]
+        self.greedy_ensemble_ = self._make_public_pipeline(
+            final_stacking_clf, self.preprocessor
         )
 
         return self.greedy_ensemble_
@@ -975,91 +1106,6 @@ class Mamut:
             estimators=estimators, final_estimator=RandomForestClassifier()
         )
 
-    def _calculate_disagreement(self, model1, model2, X_validation):
-        #  TODO: THIS IS WORK IN PROGRESS... DO NOT USE
-        """Calculate disagreement between two models' predictions."""
-        pred1 = model1.predict(X_validation)
-        pred2 = model2.predict(X_validation)
-        return np.mean(pred1 != pred2)
-
-    def _ensemble_selection(
-        self, max_ensemble_size=5, voting: Literal["soft", "hard"] = "soft"
-    ):
-        """Greedy algorithm to select the best subset of models for ensemble."""
-        #  TODO: THIS IS WORK IN PROGRESS... DO NOT USE
-        models = [
-            (model.__class__.__name__, model)
-            for model in self.raw_fitted_models_.values()
-        ]
-        print(models)
-        selected_models = []
-        remaining_models = models.copy()
-        best_score = 0
-        ensemble_performance = []
-
-        # Initialize with the best performing model on the validation set.
-        scores = {
-            name: self.score_metric(self.y_validation, model.predict(self.X_validation))
-            for name, model in models
-        }
-        print("Scores:", scores)
-        best_model_name, best_model = max(scores.items(), key=lambda item: item[1])
-        print("Best model:", best_model_name, "with score:", best_model)
-        selected_models.append((best_model_name, best_model))
-        remaining_models.remove((best_model_name, best_model))
-        best_score = scores[best_model_name]
-        ensemble_performance.append(best_score)
-
-        print(f"Starting with best model: {best_model_name} with score: {best_score}")
-
-        # Greedily add models based on performance and diversity
-        while len(selected_models) < max_ensemble_size and remaining_models:
-            best_model_to_add = None
-            best_new_score = best_score
-            for name, model in remaining_models:
-                # Test current ensemble with this model added
-                current_ensemble = VotingClassifier(
-                    estimators=selected_models + [(name, model)], voting=voting
-                )
-                current_ensemble.fit(self.X_train, self.y_train)
-                ensemble_score = self.score_metric(
-                    self.y_validation, current_ensemble.predict(self.X_validation)
-                )
-
-                # Compute diversity with selected models
-                diversity = np.mean(
-                    [
-                        self._calculate_disagreement(
-                            model, selected_model[1], self.X_validation
-                        )
-                        for selected_model in selected_models
-                    ]
-                )
-
-                # Score considering both accuracy improvement and diversity
-                weighted_score = (
-                    ensemble_score + 0.1 * diversity
-                )  # 0.1 is a diversity weight factor
-                if weighted_score > best_new_score:
-                    best_model_to_add = (name, model)
-                    best_new_score = weighted_score
-
-            if best_model_to_add:
-                selected_models.append(best_model_to_add)
-                remaining_models.remove(best_model_to_add)
-                best_score = best_new_score
-                ensemble_performance.append(best_new_score)
-                print(
-                    f"Added {best_model_to_add[0]} to ensemble, new weighted score: {best_new_score}"
-                )
-            else:
-                break  # No improvement
-
-        # Final ensemble
-        final_ensemble = VotingClassifier(estimators=selected_models, voting=voting)
-        final_ensemble.fit(self.X_train, self.y_train)
-        return final_ensemble, ensemble_performance
-
     def _predict(self, X: pd.DataFrame, proba: bool = False):
         """
         Predicts the target variable or probabilities for the given data.
@@ -1079,8 +1125,7 @@ class Mamut:
         self._check_fitted()
         if proba:
             return self.best_model_.predict_proba(X)
-        encoded_predictions = self.best_model_.predict(X)
-        return self.le.inverse_transform(np.asarray(encoded_predictions))
+        return self.best_model_.predict(X)
 
     def _check_fitted(self):
         """

@@ -1,5 +1,5 @@
 import numpy as np
-from sklearn.linear_model import LogisticRegression
+import pytest
 
 from mamut.wrapper import Mamut
 from tests.mock import X, X_missing, binary_y, imbalanced_y, multiclass_y
@@ -101,3 +101,14 @@ def test_wrapper_explicit_holdout_is_not_used_as_validation(X, binary_y):
     assert len(mamut.y_holdout) == 20
     assert len(mamut.y_validation) == 16
     assert mamut.X_holdout_raw_.equals(X_holdout)
+
+
+def test_wrapper_rejects_invalid_configuration():
+    with pytest.raises(ValueError, match="score_metric"):
+        Mamut(score_metric="bad")
+    with pytest.raises(ValueError, match="optimization_method"):
+        Mamut(optimization_method="grid")
+    with pytest.raises(ValueError, match="n_iterations"):
+        Mamut(n_iterations=0)
+    with pytest.raises(ValueError, match="unsupported model"):
+        Mamut(exclude_models=["NoSuchModel"])

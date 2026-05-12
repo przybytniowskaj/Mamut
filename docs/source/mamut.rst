@@ -9,6 +9,11 @@ The main public API is ``Mamut``. Import it with ``from mamut import Mamut`` to
 fit candidate models, select the best pipeline, generate predictions, create
 reports, and save model artifacts.
 
+The public prediction surface is ``best_model_``, ``predict``, and
+``predict_proba``. Internal fitted estimators are also exposed for inspection
+through attributes such as ``raw_fitted_models_`` and ``validation_summary_``,
+but these are primarily diagnostics for reports and model comparison.
+
 Mamut
 -----
 

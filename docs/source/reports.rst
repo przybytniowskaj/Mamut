@@ -49,7 +49,15 @@ uses it automatically. Otherwise, the report clearly shows validation metrics:
 
 .. code-block:: python
 
-   mamut.evaluate(n_top_models=3)
+   result = mamut.evaluate(n_top_models=3)
+   result["report_path"]
+
+Use a custom output directory when running multiple experiments:
+
+.. code-block:: python
+
+   result = mamut.evaluate(output_dir="reports/run_001")
+   result["report_path"]
 
 Evidence sections are included by default. Disable them only when report speed
 matters more than validation diagnostics:
@@ -58,7 +66,18 @@ matters more than validation diagnostics:
 
    mamut.evaluate(include_evidence=False)
 
-The HTML report is written to:
+SHAP and file artifacts can also be disabled for lightweight validation runs:
+
+.. code-block:: python
+
+   result = mamut.evaluate(
+       include_shap=False,
+       write_html=False,
+       save_plots=False,
+   )
+   result["evaluation_dataset"]
+
+By default, the HTML report is written to:
 
 .. code-block:: text
 
@@ -82,21 +101,24 @@ The report includes:
 * evidence-guided selection guidance
 * leakage risk checks
 * dummy, logistic regression, and random forest baseline comparison
-* repeated stratified cross-validation score stability with confidence intervals
-* ROC curve plots
-* confusion matrices
-* Optuna optimization history plots
-* feature importance plots
-* SHAP beeswarm plots
+* repeated stratified cross-validation score stability with approximate score
+  intervals
+* ROC curve plots when ``save_plots=True``
+* confusion matrices when ``save_plots=True``
+* Optuna optimization history plots when studies are available
+* feature importance plots when supported by the selected models
+* SHAP beeswarm plots when ``include_shap=True`` and ``save_plots=True``
 * preprocessing steps recorded by the fitted preprocessor
 
 SHAP Explanations
 -----------------
 
-MAMUT uses SHAP during report generation. Tree-like models generally use the
-model directly. Some estimators are explained through their prediction
-function. SHAP computation can be slower than basic prediction, so report
-generation may take longer than fitting for some model/data combinations.
+MAMUT uses SHAP during report generation when ``include_shap=True`` and plots
+are being saved. Tree-like models generally use the model directly. Some
+estimators are explained through their prediction function. SHAP computation can
+be slower than basic prediction, so report generation may take longer than
+fitting for some model/data combinations. Use ``shap_max_samples`` to cap the
+number of rows used for explanations.
 
 Output Directory Notes
 ----------------------

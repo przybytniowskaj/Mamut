@@ -2,6 +2,28 @@
 
 All notable changes to MAMUT are documented here.
 
+## Unreleased
+
+## [0.2.1] - 2026-05-12
+
+### Fixed
+
+- Made mixed numeric/categorical report generation robust to categorical columns and missing numeric values.
+- Made public model predictions return original target labels instead of internal encoded labels.
+- Reset preprocessing fit state between fits and tolerate unseen categorical levels at prediction time.
+- Added explicit validation for model-search configuration.
+
+### Added
+
+- Added configurable evaluation outputs for custom report directories, optional SHAP, optional HTML writing, and optional plot artifacts.
+- Added an opt-in final refit path for the selected estimator on all non-holdout modeling data.
+- Added generated documentation sitemap and robots metadata for Read the Docs.
+
+### Changed
+
+- Improved README, quickstart, report, and user-guide documentation around holdout evaluation, lightweight reports, final refit behavior, and approximate evidence intervals.
+- Updated Sphinx configuration for canonical Read the Docs URLs, public-page sitemap output, and stricter documentation hygiene.
+
 ## [0.2.0] - 2026-05-09
 
 ### Added

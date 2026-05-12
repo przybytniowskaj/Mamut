@@ -1,6 +1,10 @@
 Dependency Update Policy
 ========================
 
+.. meta::
+   :description: Dependency update policy for MAMUT, including uv lock handling, ML/runtime validation, and automation rules.
+   :keywords: MAMUT dependency policy, uv lock, Dependabot, ML dependencies
+
 MAMUT uses ``uv`` for dependency locking and installation. Keep dependency
 changes synchronized between ``pyproject.toml`` and ``uv.lock`` by using uv
 commands instead of editing the lockfile manually.
@@ -41,6 +45,8 @@ For these updates, run the routine checks plus:
    uv build
    uv run twine check dist/*
    uv run make -C docs html
+   uv run sphinx-build -W --keep-going -b html docs/source docs/build/html-strict
+   uv run python scripts/benchmark_evidence.py --format markdown
 
 Review model-selection behavior, preprocessing outputs, and report artifacts
 before merging.

@@ -24,12 +24,12 @@ Clone the repository and install the package in editable mode:
 
    git clone https://github.com/przybytniowskaj/Mamut.git
    cd Mamut
-   pip install -e .
+   uv sync --all-groups
 
 Development Environment
 -----------------------
 
-For repository development, install all dependency groups from ``uv.lock``:
+For repository development, keep the environment synchronized with ``uv.lock``:
 
 .. code-block:: sh
 
