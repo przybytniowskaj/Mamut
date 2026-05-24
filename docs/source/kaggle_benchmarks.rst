@@ -56,6 +56,7 @@ Development Run
      --selection-strategy single_split \
      --runs 5 \
      --n-iterations 3 \
+     --n-jobs -1 \
      --max-runtime-seconds 900 \
      --format markdown
 
@@ -64,7 +65,12 @@ under ``.cache/mamut/benchmark-results/<competition>/<campaign>/<recipe>/<run>/`
 The manifest records configuration, data hashes, source commit, branch,
 dirty-tree state, evaluation estimand, and train/test relational-overlap
 audit. ``--max-runtime-seconds`` is a soft budget checked between completed
-outer runs; a single model fit can exceed it.
+outer runs; a single model fit can exceed it. The harness prints and records
+an upper-bound estimate of tuned candidate fits. Use fixed-family
+``single_split`` screening for development before considering costly nested
+multi-family selection.
+Use ``--n-jobs -1`` for workstation screening when CPU resources are
+available; the value is included in the manifest for reproducibility.
 
 Locked Confirmation and Submission
 ----------------------------------
@@ -121,3 +127,9 @@ did not establish superior competitive performance. In paired post-score
 development evaluation, adding those batch aggregates improved LightGBM only
 slightly and did not improve CatBoost; model-family choice accounted for the
 substantial measured gain.
+
+A separate household-component-disjoint CatBoost development run at commit
+``8ae4f63`` averaged ``0.8109`` accuracy with a group-bootstrap interval of
+``0.8003`` to ``0.8214``. It uses a different reserved partition and is not a
+paired superiority test, but it does not indicate that the CatBoost
+improvement depends only on repeated surnames.

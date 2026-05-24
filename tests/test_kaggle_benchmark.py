@@ -9,6 +9,8 @@ import scripts.benchmark_kaggle as benchmark_kaggle
 from scripts.benchmark_kaggle import (
     BenchmarkConfig,
     _coerce_bool_predictions,
+    _make_mamut,
+    estimated_candidate_fit_upper_bound,
     fit_submission_model,
     format_results,
     group_bootstrap_accuracy_interval,
@@ -136,6 +138,70 @@ def test_competition_v3_allows_target_free_batch_features_under_passenger_scope(
     assert "competition-aligned" in validation_estimand(
         "spaceship_competition_v3", "passenger"
     )
+
+
+def test_candidate_fit_estimate_makes_nested_search_cost_explicit():
+    fixed = BenchmarkConfig(
+        competition="spaceship-titanic",
+        recipe="spaceship_inductive_v2",
+        runs=5,
+        n_iterations=3,
+        random_state=42,
+        holdout_size=0.2,
+        validation_protocol="grouped",
+        score_metric="accuracy",
+        search_profile="balanced",
+        selection_strategy="single_split",
+        selection_cv_splits=3,
+        selection_cv_repeats=1,
+        selection_practical_margin=0.005,
+        preprocessing_profile="auto",
+        optimization_method="random_search",
+        excluded_models=(),
+        included_models=("LGBMClassifier",),
+    )
+    broad_nested = BenchmarkConfig(
+        **{
+            **fixed.__dict__,
+            "runs": 3,
+            "selection_strategy": "nested_cv",
+            "included_models": (
+                "RandomForestClassifier",
+                "ExtraTreesClassifier",
+                "LGBMClassifier",
+                "CatBoostClassifier",
+                "XGBClassifier",
+            ),
+        }
+    )
+
+    assert estimated_candidate_fit_upper_bound(fixed) == 85
+    assert estimated_candidate_fit_upper_bound(broad_nested) == 1008
+
+
+def test_benchmark_threads_are_forwarded_to_mamut():
+    config = BenchmarkConfig(
+        competition="spaceship-titanic",
+        recipe="spaceship_inductive_v2",
+        runs=1,
+        n_iterations=1,
+        random_state=42,
+        holdout_size=0.2,
+        validation_protocol="grouped",
+        score_metric="accuracy",
+        search_profile="quick",
+        selection_strategy="single_split",
+        selection_cv_splits=2,
+        selection_cv_repeats=1,
+        selection_practical_margin=0.005,
+        preprocessing_profile="auto",
+        optimization_method="random_search",
+        excluded_models=(),
+        included_models=("LGBMClassifier",),
+        n_jobs=-1,
+    )
+
+    assert _make_mamut(config, random_state=42, final_refit=True).n_jobs == -1
 
 
 def test_passenger_groups_are_derived_from_passenger_identifier_prefix():

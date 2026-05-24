@@ -27,6 +27,8 @@ from mamut.evidence import (
     detect_leakage_risks,
     evaluate_estimators_on_split,
 )
+from mamut.model_selection import available_model_names
+from mamut.utils.utils import model_names_for_profile
 
 CompetitionName = Literal["spaceship-titanic"]
 RecipeName = Literal[
@@ -95,6 +97,7 @@ class BenchmarkConfig:
     confirmation_seed: int = DEFAULT_CONFIRMATION_SEED
     campaign_id: str = "exploration"
     max_runtime_seconds: float | None = None
+    n_jobs: int = 1
 
 
 @dataclass(frozen=True)
@@ -424,6 +427,31 @@ def validation_estimand(recipe: RecipeName, group_scope: GroupScope) -> str:
         "passenger-group-disjoint prediction; surname categories may recur across "
         "folds when present in the selected recipe"
     )
+
+
+def configured_candidate_models(config: BenchmarkConfig) -> tuple[str, ...]:
+    if config.included_models is not None:
+        return config.included_models
+    if config.excluded_models:
+        excluded = set(config.excluded_models)
+        return tuple(
+            model for model in available_model_names() if model not in excluded
+        )
+    return tuple(model_names_for_profile(config.search_profile))
+
+
+def estimated_candidate_fit_upper_bound(config: BenchmarkConfig) -> int:
+    """Estimate tuned estimator fits, excluding fixed baseline audit fits."""
+    model_count = len(configured_candidate_models(config))
+    optimization_fits = 5 * config.n_iterations + 1
+    if config.selection_strategy in {"nested_cv", "repeated_cv"}:
+        selection_repeats = config.selection_cv_repeats
+        nested_folds = config.selection_cv_splits * selection_repeats
+        per_outer_run = (model_count * (1 + nested_folds) + 1) * optimization_fits
+    else:
+        per_outer_run = model_count * optimization_fits + 1
+    run_count = 1 if config.stage == "confirmation" else config.runs
+    return per_outer_run * run_count
 
 
 def relational_overlap_audit(
@@ -1038,6 +1066,12 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--runs", type=int, default=3)
     parser.add_argument("--n-iterations", type=int, default=3)
+    parser.add_argument(
+        "--n-jobs",
+        type=int,
+        default=1,
+        help="Parallel worker count passed to supported estimators; use -1 for all CPUs.",
+    )
     parser.add_argument("--random-state", type=int, default=42)
     parser.add_argument("--holdout-size", type=float, default=0.2)
     parser.add_argument(
@@ -1118,6 +1152,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         raise ValueError("--runs must be at least 1.")
     if args.n_iterations < 1:
         raise ValueError("--n-iterations must be at least 1.")
+    if args.n_jobs == 0 or args.n_jobs < -1:
+        raise ValueError("--n-jobs must be -1 or a positive integer.")
     if args.selection_cv_splits < 2:
         raise ValueError("--selection-cv-splits must be at least 2.")
     if args.selection_cv_repeats < 1:
@@ -1163,6 +1199,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         confirmation_seed=args.confirmation_seed,
         campaign_id=args.campaign_id,
         max_runtime_seconds=args.max_runtime_seconds,
+        n_jobs=args.n_jobs,
     )
 
     data_dir = ensure_competition_data(
@@ -1191,6 +1228,16 @@ def main(argv: Sequence[str] | None = None) -> int:
             "The reserved confirmation partition has already been evaluated for this "
             "campaign. Start a separately documented campaign instead of reusing it."
         )
+    estimated_candidate_fits = estimated_candidate_fit_upper_bound(config)
+    print(
+        (
+            "[benchmark] protocol: "
+            f"estimand={validation_estimand(config.recipe, config.group_scope)}; "
+            f"estimated candidate fit upper bound={estimated_candidate_fits}"
+        ),
+        file=sys.stderr,
+        flush=True,
+    )
 
     partitions = {
         "official_train_rows": len(train),
@@ -1249,6 +1296,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             "validation_estimand": validation_estimand(
                 config.recipe, config.group_scope
             ),
+            "estimated_candidate_fit_upper_bound": estimated_candidate_fits,
             "development_interval": (
                 "Group bootstrap interval of recorded outer predictions; it "
                 "does not represent post-selection confirmation."
@@ -1361,6 +1409,7 @@ def _make_mamut(
         optimization_method=config.optimization_method,
         n_iterations=config.n_iterations,
         random_state=random_state,
+        n_jobs=config.n_jobs,
         exclude_models=list(config.excluded_models),
         include_models=(
             list(config.included_models) if config.included_models is not None else None
