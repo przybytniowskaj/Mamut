@@ -14,11 +14,13 @@ from scripts.benchmark_kaggle import (
     passenger_groups,
     prepare_spaceship_features,
     prepare_spaceship_modeling_split,
+    relational_overlap_audit,
     reserve_confirmation_partition,
     run_confirmation_benchmark,
     split_spaceship_validation,
     summarize_runs,
     validate_recipe_scope,
+    validation_estimand,
     write_submission,
 )
 
@@ -120,6 +122,20 @@ def test_cohort_v2_requires_household_component_scope():
         validate_recipe_scope("spaceship_cohort_v2", "passenger")
 
 
+def test_competition_v3_allows_target_free_batch_features_under_passenger_scope():
+    validate_recipe_scope("spaceship_competition_v3", "passenger")
+    features, _, _, _ = prepare_spaceship_features(
+        _spaceship_train(), _spaceship_test(), recipe="spaceship_competition_v3"
+    )
+
+    assert {"PassengerGroupSize", "FamilyBatchSize", "FamilyBatchShared"}.issubset(
+        features.columns
+    )
+    assert "competition-aligned" in validation_estimand(
+        "spaceship_competition_v3", "passenger"
+    )
+
+
 def test_passenger_groups_are_derived_from_passenger_identifier_prefix():
     groups = passenger_groups(_spaceship_train())
 
@@ -162,6 +178,21 @@ def test_reserved_confirmation_partition_is_group_disjoint():
 
     assert len(development) + len(confirmation) == len(_spaceship_train())
     assert set(development_groups).isdisjoint(confirmation_groups)
+
+
+def test_relational_overlap_audit_reports_recurring_family_names_separately():
+    modeling = _spaceship_train().iloc[:2].copy()
+    evaluation = _spaceship_train().iloc[2:].copy()
+    modeling.loc[0, "Name"] = "A Shared"
+    evaluation.loc[0, "Name"] = "B Shared"
+
+    rows = pd.DataFrame(relational_overlap_audit(modeling, evaluation)).set_index(
+        "feature"
+    )
+
+    assert rows.loc["PassengerGroup", "shared_values"] == 0
+    assert rows.loc["FamilyName", "shared_values"] == 1
+    assert rows.loc["FamilyName", "evaluation_rows_with_seen_value"] == 1
 
 
 def test_confirmation_scores_only_selected_prediction_without_passing_holdout_to_fit(

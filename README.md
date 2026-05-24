@@ -24,7 +24,7 @@ MAMUT is best used as a readable baseline and experiment report generator for be
 - Report generation via `evaluate()` with metrics, plots, and SHAP explanations.
 - Configurable artifacts: `fit()` keeps models in memory by default and saves fitted models only when `save_models=True`.
 - Reproducible benchmark diagnostics via `scripts/benchmark_evidence.py`.
-- External Kaggle benchmark harness with development/confirmation separation and explicit submission controls.
+- External Kaggle benchmark harness with immutable campaign records, explicit validation estimands, and submission controls.
 
 ## Installation
 Python 3.12 is the target runtime (see `.python-version`).
@@ -111,7 +111,7 @@ uv run pre-commit run --all-files
 uv run make -C docs html
 uv run sphinx-build -W --keep-going -b html docs/source docs/build/html-strict
 uv run python scripts/benchmark_evidence.py
-uv run python scripts/benchmark_kaggle.py spaceship-titanic --stage development --runs 1 --n-iterations 1
+uv run python scripts/benchmark_kaggle.py spaceship-titanic --campaign-id smoke --stage development --runs 1 --n-iterations 1
 uv build
 uv run twine check dist/*
 ```

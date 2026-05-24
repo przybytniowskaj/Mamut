@@ -11,24 +11,28 @@ external dataset without confusing local validation with official Kaggle
 leaderboard results. No MAMUT leaderboard result should be claimed until an
 uploaded submission reference and public score are recorded.
 
-Protocol
---------
+Protocol and Estimands
+----------------------
 
-The default ``development`` stage reserves a deterministic, group-disjoint
-confirmation partition and excludes it from experimentation. Development runs
-use passenger-group-disjoint outer evaluation and nested, fold-local model
-selection. Only a frozen candidate may be run once with ``--stage
-confirmation``. A confirmation score is an observation of that candidate; it
-must not select a different model. Confirmation fits on development data
-without exposing reserved labels to candidate-reporting logic, then predicts
-the reserved partition once for the selected candidate.
+The ``development`` stage reserves a deterministic confirmation partition and
+excludes it from model development within a campaign. Only a frozen candidate
+may be run once with ``--stage confirmation``. A confirmation score is an
+observation of that candidate; it must not select another model.
 
-The default ``spaceship_inductive_v2`` recipe derives row-observable domain
-features including cabin structure, spending behavior, age groups, CryoSleep
-consistency, and family name. ``spaceship_cohort_v2`` additionally derives
-batch-level family and passenger-group sizes. It requires
-``--group-scope household_component`` so related surnames cannot cross
-validation folds. Older recipes remain available only for reproducibility.
+Two evaluation estimands are deliberately available:
+
+* ``--recipe spaceship_competition_v3 --group-scope passenger`` estimates the
+  Kaggle task. Exact passenger groups remain disjoint, but surname categories
+  may recur across folds because the official Kaggle train/test files share
+  surnames extensively. Features such as batch family size remain target-free.
+* ``--recipe spaceship_cohort_v2 --group-scope household_component`` estimates
+  performance for entirely unseen surname-linked components. It is stricter
+  and should be used for deployment-oriented generalization claims.
+
+The earlier ``spaceship_inductive_v2`` recipe derives row-level domain
+features and surname category only; it omits the batch relational features
+available in the competition-aligned recipe. Older recipes remain available
+for reproducibility.
 
 Reported development metrics include outer accuracy, fixed-baseline uplift,
 audit-only alternate-candidate deltas, and a group-bootstrap interval over
@@ -45,23 +49,22 @@ Development Run
 
    uv run python scripts/benchmark_kaggle.py spaceship-titanic \
      --stage development \
-     --recipe spaceship_inductive_v2 \
+     --campaign-id spaceship-competition-v3 \
+     --recipe spaceship_competition_v3 \
      --group-scope passenger \
-     --search-profile balanced \
-     --selection-strategy nested_cv \
-     --selection-cv-splits 3 \
-     --selection-cv-repeats 1 \
+     --include-models LGBMClassifier \
+     --selection-strategy single_split \
      --runs 5 \
      --n-iterations 3 \
-     --exclude-models SVC MLPClassifier KNeighborsClassifier \
+     --max-runtime-seconds 900 \
      --format markdown
 
-The command writes an ignored ``latest_results.json`` and
-``experiment_manifest.json`` under ``.cache/mamut/benchmark-results/``. The
-manifest records configuration, data hashes, source commit, branch, dirty-tree
-state, and protocol interpretation. Detailed results include the nested
-selection summary, fixed-baseline comparison, and explicitly labeled
-development holdout audit rows.
+Each command writes immutable ``results.json`` and ``manifest.json`` files
+under ``.cache/mamut/benchmark-results/<competition>/<campaign>/<recipe>/<run>/``.
+The manifest records configuration, data hashes, source commit, branch,
+dirty-tree state, evaluation estimand, and train/test relational-overlap
+audit. ``--max-runtime-seconds`` is a soft budget checked between completed
+outer runs; a single model fit can exceed it.
 
 Locked Confirmation and Submission
 ----------------------------------
@@ -73,28 +76,32 @@ once on the reserved partition:
 
    uv run python scripts/benchmark_kaggle.py spaceship-titanic \
      --stage confirmation \
-     --recipe spaceship_inductive_v2 \
+     --campaign-id spaceship-competition-v3 \
+     --recipe spaceship_competition_v3 \
      --group-scope passenger \
-     --include-models CatBoostClassifier LGBMClassifier \
-     --selection-strategy nested_cv \
-     --selection-cv-splits 3 \
-     --selection-cv-repeats 1 \
-     --n-iterations 10 \
+     --include-models CatBoostClassifier \
+     --selection-strategy single_split \
+     --n-iterations 5 \
      --write-submission
 
 ``--write-submission`` is allowed only in the confirmation stage and produces
-a local CSV. The first confirmation evaluation writes a campaign marker and
-subsequent attempts are rejected, because it is no longer an unseen holdout.
-Add ``--submit`` only for a frozen milestone from a clean git working tree.
-The harness rejects dirty-tree uploads. Official Kaggle public
-scores must be documented separately from local evidence with the manifest,
-commit SHA, package version, and submission reference.
+a local CSV. The first confirmation evaluation writes a marker inside that
+campaign and subsequent confirmation attempts in the same campaign are
+rejected. Add ``--submit`` only for a frozen milestone from a clean git
+working tree. After any leaderboard result is observed, a later campaign is
+useful for iteration but is not an independent final performance test.
 
 Current Evidence Status
 -----------------------
 
-The existing ``0.7843`` accuracy result is a single-run, group-disjoint
-integrity smoke result from an earlier recipe and a restricted
-logistic-regression/random-forest candidate pool. It is not an official Kaggle
-score and not a competitive performance estimate. The v2 campaign must be run
-before making performance claims.
+The first official MAMUT submission used commit ``ca29cc8``,
+``spaceship_inductive_v2``, and ``LGBMClassifier``. Five development folds
+averaged ``0.8064`` accuracy; the locked confirmation score was ``0.7967``;
+the Kaggle public score was ``0.79798`` (submission ``52996032``). It did not
+beat the repository owner's previous ``cat.csv`` score of ``0.80500``.
+
+Audit interpretation: the official train/test files share surname values for
+``87.9%`` of test rows but do not share exact passenger-group or cabin keys.
+The submitted recipe therefore used a legitimate competition-aligned surname
+signal, but did not exploit target-free family/group batch aggregates and did
+not establish superior competitive performance.

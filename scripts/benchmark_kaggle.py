@@ -5,7 +5,9 @@ import argparse
 import hashlib
 import json
 import platform
+import re
 import subprocess
+import sys
 import time
 import warnings
 from dataclasses import asdict, dataclass
@@ -33,6 +35,7 @@ RecipeName = Literal[
     "spaceship_basic",
     "spaceship_inductive_v2",
     "spaceship_cohort_v2",
+    "spaceship_competition_v3",
 ]
 ValidationProtocol = Literal["grouped", "row"]
 GroupScope = Literal["passenger", "household_component"]
@@ -52,7 +55,7 @@ SPACESHIP_BASIC_DROP_COLUMNS = (
 )
 DEFAULT_EXCLUDED_MODELS = ()
 DEFAULT_CONFIRMATION_SEED = 20260524
-FEATURE_RECIPE_VERSION = "2"
+FEATURE_RECIPE_VERSION = "3"
 
 warnings.filterwarnings(
     "ignore",
@@ -89,6 +92,8 @@ class BenchmarkConfig:
     stage: BenchmarkStage = "diagnostic"
     confirmation_size: float = 0.2
     confirmation_seed: int = DEFAULT_CONFIRMATION_SEED
+    campaign_id: str = "exploration"
+    max_runtime_seconds: float | None = None
 
 
 @dataclass(frozen=True)
@@ -197,6 +202,7 @@ def prepare_spaceship_features(
         "spaceship_basic",
         "spaceship_inductive_v2",
         "spaceship_cohort_v2",
+        "spaceship_competition_v3",
     }:
         X = _spaceship_features_for_recipe(train, recipe).reset_index(drop=True)
         X_test = _spaceship_features_for_recipe(test, recipe).reset_index(drop=True)
@@ -205,7 +211,8 @@ def prepare_spaceship_features(
 
     raise ValueError(
         "recipe must be one of: raw, spaceship_inductive, spaceship_cohort, "
-        "spaceship_basic, spaceship_inductive_v2, spaceship_cohort_v2."
+        "spaceship_basic, spaceship_inductive_v2, spaceship_cohort_v2, "
+        "spaceship_competition_v3."
     )
 
 
@@ -236,9 +243,12 @@ def _spaceship_features_for_recipe(
         return _spaceship_features_v2(frame, include_cohort_features=False)
     if recipe == "spaceship_cohort_v2":
         return _spaceship_features_v2(frame, include_cohort_features=True)
+    if recipe == "spaceship_competition_v3":
+        return _spaceship_features_v2(frame, include_cohort_features=True)
     raise ValueError(
         "recipe must be one of: raw, spaceship_inductive, spaceship_cohort, "
-        "spaceship_basic, spaceship_inductive_v2, spaceship_cohort_v2."
+        "spaceship_basic, spaceship_inductive_v2, spaceship_cohort_v2, "
+        "spaceship_competition_v3."
     )
 
 
@@ -344,18 +354,22 @@ def passenger_groups(frame: pd.DataFrame) -> pd.Series:
     )
 
 
-def household_components(frame: pd.DataFrame) -> pd.Series:
-    """Join passenger groups sharing a known family name for sensitivity testing."""
-    passenger = passenger_groups(frame).reset_index(drop=True)
-    family = (
+def family_names(frame: pd.DataFrame) -> pd.Series:
+    return (
         frame["Name"]
         .astype("string")
         .str.rsplit(n=1)
         .str[-1]
         .str.strip()
         .str.lower()
-        .reset_index(drop=True)
+        .fillna("unknown")
     )
+
+
+def household_components(frame: pd.DataFrame) -> pd.Series:
+    """Join passenger groups sharing a known family name for sensitivity testing."""
+    passenger = passenger_groups(frame).reset_index(drop=True)
+    family = family_names(frame).reset_index(drop=True)
     parents: dict[str, str] = {}
 
     def find(value: str) -> str:
@@ -372,7 +386,7 @@ def household_components(frame: pd.DataFrame) -> pd.Series:
     for group, surname in zip(passenger, family):
         group_key = f"group:{group}"
         find(group_key)
-        if pd.notna(surname) and surname != "":
+        if pd.notna(surname) and surname not in {"", "unknown"}:
             union(group_key, f"family:{surname}")
 
     return passenger.map(lambda group: find(f"group:{group}"))
@@ -395,6 +409,48 @@ def validate_recipe_scope(recipe: RecipeName, group_scope: GroupScope) -> None:
             "spaceship_cohort_v2 requires group_scope='household_component' so "
             "batch-level family features remain fold-disjoint."
         )
+
+
+def validation_estimand(recipe: RecipeName, group_scope: GroupScope) -> str:
+    if group_scope == "household_component":
+        return "generalization to held-out surname-linked household components"
+    if recipe == "spaceship_competition_v3":
+        return (
+            "competition-aligned batch prediction with target-free relational "
+            "features and surname categories allowed to recur across folds"
+        )
+    return (
+        "passenger-group-disjoint prediction; surname categories may recur across "
+        "folds when present in the selected recipe"
+    )
+
+
+def relational_overlap_audit(
+    modeling: pd.DataFrame, evaluation: pd.DataFrame
+) -> list[dict]:
+    """Describe observable identifier recurrence between fitted and scored batches."""
+    key_series = {
+        "PassengerGroup": (passenger_groups(modeling), passenger_groups(evaluation)),
+        "FamilyName": (family_names(modeling), family_names(evaluation)),
+        "Cabin": (
+            modeling["Cabin"].astype("string").str.lower().fillna("unknown"),
+            evaluation["Cabin"].astype("string").str.lower().fillna("unknown"),
+        ),
+    }
+    rows = []
+    for feature, (left, right) in key_series.items():
+        ignored = {"", "unknown"}
+        shared = (set(left) - ignored) & (set(right) - ignored)
+        evaluation_shared = right.isin(shared)
+        rows.append(
+            {
+                "feature": feature,
+                "shared_values": len(shared),
+                "evaluation_rows_with_seen_value": int(evaluation_shared.sum()),
+                "evaluation_fraction_with_seen_value": float(evaluation_shared.mean()),
+            }
+        )
+    return rows
 
 
 def split_spaceship_validation(
@@ -464,6 +520,7 @@ def run_spaceship_benchmark(
     prediction_rows = []
     diagnostics = []
     validate_recipe_scope(config.recipe, config.group_scope)
+    benchmark_start = time.perf_counter()
 
     for run in range(config.runs):
         run_random_state = config.random_state + run
@@ -574,6 +631,9 @@ def run_spaceship_benchmark(
         diagnostics.append(
             {
                 "run": run,
+                "relational_overlap": relational_overlap_audit(
+                    modeling_raw, holdout_raw
+                ),
                 "selection_summary": model.selection_summary_.to_dict(orient="records"),
                 "candidate_holdout_audit_only": audit_candidates.to_dict(
                     orient="records"
@@ -584,6 +644,30 @@ def run_spaceship_benchmark(
                 "leakage_checks": leakage_checks.to_dict(orient="records"),
             }
         )
+        elapsed_seconds = time.perf_counter() - benchmark_start
+        print(
+            (
+                f"[benchmark] completed development run {run + 1}/{config.runs}: "
+                f"selected={selected_model} score={selected_score:.4f} "
+                f"elapsed={elapsed_seconds:.1f}s"
+            ),
+            file=sys.stderr,
+            flush=True,
+        )
+        budget_configured = config.max_runtime_seconds is not None
+        budget_seconds = float(config.max_runtime_seconds or 0)
+        budget_reached = budget_configured and elapsed_seconds >= budget_seconds
+        runs_remaining = run + 1 < config.runs
+        if budget_reached and runs_remaining:
+            print(
+                (
+                    "[benchmark] stopping between completed runs because the soft "
+                    f"runtime budget of {config.max_runtime_seconds:.1f}s was reached."
+                ),
+                file=sys.stderr,
+                flush=True,
+            )
+            break
 
     run_results = pd.DataFrame(rows)
     aggregate = summarize_runs(
@@ -591,6 +675,13 @@ def run_spaceship_benchmark(
         score_column="selected_holdout_score",
         predictions=pd.DataFrame(prediction_rows),
         random_state=config.random_state,
+    )
+    aggregate.update(
+        {
+            "requested_runs": config.runs,
+            "completed_runs": len(run_results),
+            "runtime_budget_exhausted": len(run_results) < config.runs,
+        }
     )
     return run_results, aggregate, diagnostics
 
@@ -790,12 +881,22 @@ def run_confirmation_benchmark(
     diagnostics = [
         {
             "run": 0,
+            "relational_overlap": relational_overlap_audit(development, confirmation),
             "selection_summary": model.selection_summary_.to_dict(orient="records"),
             "fixed_baseline_comparison": baseline_comparison.to_dict(orient="records"),
             "leakage_checks": leakage_checks.to_dict(orient="records"),
             "candidate_holdout_audit_only": "not evaluated during confirmation",
         }
     ]
+    print(
+        (
+            "[benchmark] completed locked confirmation: "
+            f"selected={selected_model} score={selected_score:.4f} "
+            f"elapsed={duration_seconds:.1f}s"
+        ),
+        file=sys.stderr,
+        flush=True,
+    )
     return run_results, aggregate, diagnostics
 
 
@@ -898,8 +999,9 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             "spaceship_basic",
             "spaceship_inductive_v2",
             "spaceship_cohort_v2",
+            "spaceship_competition_v3",
         ],
-        default="spaceship_inductive_v2",
+        default="spaceship_competition_v3",
     )
     parser.add_argument(
         "--stage",
@@ -922,6 +1024,22 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--confirmation-size", type=float, default=0.2)
     parser.add_argument(
         "--confirmation-seed", type=int, default=DEFAULT_CONFIRMATION_SEED
+    )
+    parser.add_argument(
+        "--campaign-id",
+        default="exploration",
+        help="Stable identifier used to isolate development and confirmation records.",
+    )
+    parser.add_argument(
+        "--run-id",
+        default=None,
+        help="Optional immutable run directory name; generated automatically by default.",
+    )
+    parser.add_argument(
+        "--max-runtime-seconds",
+        type=float,
+        default=None,
+        help="Soft development budget checked between completed outer runs.",
     )
     parser.add_argument(
         "--score-metric",
@@ -987,6 +1105,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         raise ValueError("Use --include-models or --exclude-models, not both.")
     if not 0 < args.confirmation_size < 1:
         raise ValueError("--confirmation-size must be greater than 0 and less than 1.")
+    if args.max_runtime_seconds is not None and args.max_runtime_seconds <= 0:
+        raise ValueError("--max-runtime-seconds must be greater than zero.")
+    validate_identifier(args.campaign_id, name="campaign-id")
+    if args.run_id is not None:
+        validate_identifier(args.run_id, name="run-id")
     validate_recipe_scope(args.recipe, args.group_scope)
 
     config = BenchmarkConfig(
@@ -1011,6 +1134,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         stage=args.stage,
         confirmation_size=args.confirmation_size,
         confirmation_seed=args.confirmation_seed,
+        campaign_id=args.campaign_id,
+        max_runtime_seconds=args.max_runtime_seconds,
     )
 
     data_dir = ensure_competition_data(
@@ -1025,11 +1150,15 @@ def main(argv: Sequence[str] | None = None) -> int:
             "Official Kaggle submission requires a clean git working tree so the "
             "uploaded artifact is reproducible from a recorded commit."
         )
-    output_dir = args.output_dir / config.competition / config.recipe
-    output_dir.mkdir(parents=True, exist_ok=True)
-    confirmation_marker = (
-        args.output_dir / config.competition / "confirmation_consumed.json"
-    )
+    campaign_dir = args.output_dir / config.competition / config.campaign_id
+    run_id = args.run_id or build_run_id(metadata, config.stage)
+    output_dir = campaign_dir / config.recipe / run_id
+    if output_dir.exists():
+        raise RuntimeError(
+            f"Run directory already exists: {output_dir}. Use a new --run-id."
+        )
+    output_dir.mkdir(parents=True)
+    confirmation_marker = campaign_dir / "confirmation_consumed.json"
     if args.stage == "confirmation" and confirmation_marker.exists():
         raise RuntimeError(
             "The reserved confirmation partition has already been evaluated for this "
@@ -1040,6 +1169,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "official_train_rows": len(train),
         "official_test_rows": len(test),
         "confirmation_reserved": args.stage != "diagnostic",
+        "official_train_test_relational_overlap": relational_overlap_audit(train, test),
     }
     if args.stage == "diagnostic":
         run_results, aggregate, diagnostics = run_spaceship_benchmark(
@@ -1083,6 +1213,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         "protocol": {
             "primary_metric": config.score_metric,
             "grouped_validation": config.validation_protocol == "grouped",
+            "validation_estimand": validation_estimand(
+                config.recipe, config.group_scope
+            ),
             "development_interval": (
                 "Group bootstrap interval of recorded outer predictions; it "
                 "does not represent post-selection confirmation."
@@ -1096,9 +1229,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         "runs": run_results.to_dict(orient="records"),
         "diagnostics": diagnostics,
         "submission": {"generated": False, "uploaded": False},
+        "campaign_id": config.campaign_id,
+        "run_id": run_id,
     }
-    results_path = output_dir / "latest_results.json"
-    manifest_path = output_dir / "experiment_manifest.json"
+    results_path = output_dir / "results.json"
+    manifest_path = output_dir / "manifest.json"
 
     write_campaign_artifacts(payload, results_path, manifest_path)
     if args.stage == "confirmation":
@@ -1154,6 +1289,8 @@ def write_campaign_artifacts(
                     "partitions": payload["partitions"],
                     "protocol": payload["protocol"],
                     "submission": payload["submission"],
+                    "campaign_id": payload["campaign_id"],
+                    "run_id": payload["run_id"],
                 }
             ),
             indent=2,
@@ -1267,6 +1404,21 @@ def _git_dirty() -> bool:
         )
     except (subprocess.CalledProcessError, FileNotFoundError):
         return True
+
+
+def validate_identifier(value: str, *, name: str) -> None:
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", value):
+        raise ValueError(
+            f"--{name} must start with an alphanumeric character and contain "
+            "only letters, numbers, '.', '_' or '-'."
+        )
+
+
+def build_run_id(metadata: BenchmarkMetadata, stage: BenchmarkStage) -> str:
+    timestamp = datetime.fromisoformat(metadata.generated_at_utc).strftime(
+        "%Y%m%dT%H%M%S%fZ"
+    )
+    return f"{stage}-{timestamp}-{metadata.git_commit}"
 
 
 def _default_submission_message(
