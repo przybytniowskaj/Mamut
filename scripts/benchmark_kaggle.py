@@ -734,21 +734,23 @@ def group_bootstrap_accuracy_interval(
     if predictions is None or predictions.empty:
         return np.nan, np.nan
     rng = np.random.default_rng(random_state)
-    frames = [frame for _, frame in predictions.groupby("repeat", sort=True)]
-    samples = []
+    grouped_repeats = []
+    for _, frame in predictions.groupby("repeat", sort=True):
+        grouped = (
+            frame.groupby("group", sort=False)["correct"]
+            .agg(["sum", "count"])
+            .to_numpy(dtype=float)
+        )
+        grouped_repeats.append(grouped)
+    samples = np.empty(n_resamples, dtype=float)
     for _ in range(n_resamples):
-        correctness = []
-        for frame in frames:
-            grouped = {
-                group: values["correct"].to_numpy(dtype=float)
-                for group, values in frame.groupby("group", sort=False)
-            }
-            group_names = list(grouped)
-            chosen = rng.choice(group_names, size=len(group_names), replace=True)
-            correctness.extend(
-                value for group in chosen for value in grouped[str(group)]
-            )
-        samples.append(float(np.mean(correctness)))
+        correct = 0.0
+        count = 0.0
+        for grouped in grouped_repeats:
+            selected = rng.integers(0, len(grouped), size=len(grouped))
+            correct += grouped[selected, 0].sum()
+            count += grouped[selected, 1].sum()
+        samples[_] = correct / count
     alpha = (1 - confidence_level) / 2
     return tuple(float(value) for value in np.quantile(samples, [alpha, 1 - alpha]))
 
