@@ -41,6 +41,19 @@ def test_detect_leakage_risks_flags_target_copy_and_target_like_name():
     assert "id_like_high_cardinality_feature" in set(checks["check"])
 
 
+def test_conflicting_duplicate_features_are_data_ambiguity_not_leakage_warning():
+    X = pd.DataFrame({"signal": [1, 1, 2], "segment": ["a", "a", "b"]})
+    y = pd.Series([0, 1, 1], name="target")
+
+    checks = detect_leakage_risks(X, y)
+    collision = checks.loc[
+        checks["check"].eq("duplicate_features_conflicting_targets")
+    ].iloc[0]
+
+    assert collision["severity"] == "info"
+    assert "not evidence of leakage" in collision["message"]
+
+
 def test_generate_evidence_contains_baselines_and_score_intervals():
     X, y = _classification_frame()
     mamut = Mamut(
@@ -103,6 +116,48 @@ def test_generate_evidence_uses_validation_when_holdout_is_absent():
     assert not bool(mamut.validation_integrity_.iloc[0]["holdout_available"])
 
 
+def test_final_confirmation_evidence_can_omit_non_selected_candidates():
+    X, y = _classification_frame()
+    mamut = Mamut(
+        include_models=["GaussianNB", "LogisticRegression"],
+        n_iterations=1,
+        optimization_method="random_search",
+        holdout_size=0.2,
+        evidence_cv_splits=2,
+        evidence_cv_repeats=1,
+    )
+    mamut.fit(X, y)
+
+    mamut.generate_evidence(dataset="holdout", include_candidate_comparison=False)
+
+    labels = set(mamut.baseline_comparison_["model"])
+    assert not any(label.startswith("MAMUT Candidate") for label in labels)
+    assert any(label.startswith("MAMUT Selected") for label in labels)
+
+
+def test_generate_evidence_reports_group_disjoint_validation():
+    X, y = _classification_frame()
+    groups = pd.Series(np.repeat(np.arange(36), 2))
+    mamut = Mamut(
+        exclude_models=_exclude_all_except("GaussianNB"),
+        n_iterations=1,
+        optimization_method="random_search",
+        random_state=42,
+        holdout_size=0.2,
+        evidence_cv_splits=2,
+        evidence_cv_repeats=1,
+        num_imputation="mean",
+    )
+    mamut.fit(X, y, groups=groups)
+
+    mamut.generate_evidence()
+    row = mamut.validation_integrity_.iloc[0]
+
+    assert bool(row["grouped_validation"])
+    assert row["cv_strategy"] == "RepeatedStratifiedGroupKFold"
+    assert row["evaluation_group_overlap"] == 0
+
+
 def test_selection_guidance_challenges_holdout_winner_without_silent_promotion():
     selected = "MAMUT Selected (GaussianNB)"
     baseline_comparison = pd.DataFrame(
@@ -144,7 +199,8 @@ def test_selection_guidance_challenges_holdout_winner_without_silent_promotion()
 
     row = guidance.iloc[0]
     assert row["status"] == "challenged"
-    assert row["recommended_model"] == "Random Forest"
+    assert row["recommended_model"] == selected
+    assert row["review_candidate"] == "Random Forest"
     assert "Do not silently promote" in row["action"]
 
 

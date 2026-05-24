@@ -38,3 +38,40 @@ def test_fit_transform_resets_inferred_feature_state(binary_y):
 
     assert prp.numeric_features == ["num_b"]
     assert prp.categorical_features == ["cat_b"]
+
+
+def test_tree_ohe_profile_skips_numeric_scaling_and_keeps_numpy_output(X, binary_y):
+    prp = Preprocessor(profile="tree_ohe")
+
+    Xft, _ = prp.fit_transform(X, binary_y)
+
+    assert isinstance(Xft, np.ndarray)
+    assert prp.scaler_ is None
+    assert "category_encoding" in prp.report()
+
+
+def test_native_categorical_profile_preserves_dataframe_categories(X, binary_y):
+    X = X.copy()
+    X.loc[0, "cat1"] = np.nan
+    prp = Preprocessor(profile="native_categorical")
+
+    Xft, _ = prp.fit_transform(X, binary_y)
+    Xt = prp.transform(X.head())
+
+    assert isinstance(Xft, pd.DataFrame)
+    assert isinstance(Xt, pd.DataFrame)
+    assert str(Xft["cat1"].dtype) == "category"
+    assert prp.missing_num_trans_ is None
+    assert prp.scaler_ is None
+
+
+def test_transform_imputes_missing_values_not_seen_during_fit():
+    X_train = pd.DataFrame({"value": [1.0, 2.0, 3.0], "kind": ["a", "b", "a"]})
+    X_new = pd.DataFrame({"value": [np.nan], "kind": [np.nan]})
+    y_train = pd.Series([0, 1, 0])
+    prp = Preprocessor(num_imputation="mean", cat_imputation="most_frequent")
+
+    prp.fit_transform(X_train, y_train)
+    transformed = prp.transform(X_new)
+
+    assert np.isfinite(transformed).all()

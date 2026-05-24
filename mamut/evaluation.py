@@ -179,7 +179,6 @@ def _generate_ensemble_list(ensemble: Pipeline) -> str:
         return ""
     ensemble = _unwrap_public_model(ensemble.named_steps["model"])
     base_estimators = ensemble.estimators
-    meta = ensemble.final_estimator
     # Generate HTML list with ensemble contents:
     html_list = ""
 
@@ -188,7 +187,13 @@ def _generate_ensemble_list(ensemble: Pipeline) -> str:
         html_list += f"<li>{name}: {estimator.__class__.__name__}</li>"
     html_list += "</ul></li>"
 
-    html_list += f"<li><strong>Meta Model:</strong> <ul><li>{meta.__class__.__name__}</li></ul></li>"
+    if hasattr(ensemble, "final_estimator"):
+        meta = ensemble.final_estimator
+        html_list += f"<li><strong>Meta Model:</strong> <ul><li>{meta.__class__.__name__}</li></ul></li>"
+    else:
+        html_list += (
+            f"<li><strong>Voting:</strong> <ul><li>{ensemble.voting}</li></ul></li>"
+        )
 
     return html_list
 
@@ -218,8 +223,8 @@ class ModelEvaluator:
     def __init__(
         self,
         models: dict,
-        # X_evaluation and y_evaluation are preprocessed. X and y are not.
-        X_evaluation: np.ndarray,
+        # X_evaluation is in the input contract expected by ``models``.
+        X_evaluation,
         y_evaluation: np.ndarray,
         X_train: np.ndarray,
         y_train: np.ndarray,
@@ -235,6 +240,7 @@ class ModelEvaluator:
         preprocessing_steps,
         is_ensemble: bool,
         greedy_ensemble,
+        X_explanation=None,
         feature_names: Optional[List[str]] = None,
         excluded_models: List[str] = None,
         n_top_models: int = 3,
@@ -256,6 +262,7 @@ class ModelEvaluator:
         self.y_evaluation = y_evaluation
         self.X_train = X_train
         self.y_train = y_train
+        self.X_explanation = X_train if X_explanation is None else X_explanation
         self.optimizer = optimizer
         self.n_trials = n_trials
         self.metric = metric
@@ -433,14 +440,14 @@ class ModelEvaluator:
         save: bool = True,
     ) -> None:
         rows = math.ceil(n_top / 3)
-        fig = plt.figure(figsize=(18, 5 * rows))
+        fig = plt.figure(figsize=(18, 5 * rows), layout="constrained")
         top_models = training_summary["Model"].head(n_top).to_numpy()
         if n_top == 3:
-            gs = gridspec.GridSpec(1, 3, wspace=0.4)
+            gs = gridspec.GridSpec(1, 3, figure=fig, wspace=0.4)
         elif n_top > 3:
-            gs = gridspec.GridSpec(rows, 3, wspace=0.3, hspace=0.3)
+            gs = gridspec.GridSpec(rows, 3, figure=fig, wspace=0.3, hspace=0.3)
         else:
-            gs = gridspec.GridSpec(1, n_top, wspace=0.3, hspace=0.3)
+            gs = gridspec.GridSpec(1, n_top, figure=fig, wspace=0.3, hspace=0.3)
 
         for i, model_name in enumerate(top_models):
             model = next(
@@ -454,8 +461,6 @@ class ModelEvaluator:
             plt.title(f"{model_name}", fontsize=14)
             plt.xlabel("Predicted", fontsize=12)
             plt.ylabel("Actual", fontsize=12)
-
-        plt.tight_layout()
 
         if save:
             plt.savefig(
@@ -552,7 +557,11 @@ class ModelEvaluator:
 
     def _plot_shap_beeswarm(self, model, show: bool = False, save: bool = True) -> None:
         X_background = self._shap_background()
-        if model.__class__.__name__ in ["KNeighborsClassifier", "SVC", "MLPClassifier"]:
+        if hasattr(model, "preprocessor_") or model.__class__.__name__ in [
+            "KNeighborsClassifier",
+            "SVC",
+            "MLPClassifier",
+        ]:
             explainer = shap.Explainer(model.predict, X_background)
         else:
             explainer = shap.Explainer(model, X_background)
@@ -605,10 +614,10 @@ class ModelEvaluator:
     def _shap_background(self):
         if (
             self.shap_max_samples is None
-            or self.X_train.shape[0] <= self.shap_max_samples
+            or self.X_explanation.shape[0] <= self.shap_max_samples
         ):
-            return self.X_train
-        return self.X_train[: self.shap_max_samples]
+            return self.X_explanation
+        return self.X_explanation[: self.shap_max_samples]
 
     def _plot_pca_loadings(self, show: bool = False, save: bool = True) -> None:
         if self.pca_loadings is None:
@@ -830,7 +839,7 @@ class ModelEvaluator:
             plots_available=self.save_plots,
             shap_available=self.include_shap and self.save_plots,
             is_ensemble=self.is_ensemble,
-            ensemble_method="Stacking",
+            ensemble_method="Voting",
             ensemble_list=_generate_ensemble_list(self.greedy_ensemble),
             ensemble_summary=self._generate_greedy_ensemble_results_html(
                 self.greedy_ensemble

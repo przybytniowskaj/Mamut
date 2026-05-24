@@ -49,6 +49,8 @@ class Preprocessor:
         Whether to perform feature selection.
     pca : bool
         Whether to perform PCA for feature extraction.
+    outlier_removal : bool
+        Whether to remove rows flagged by IsolationForest during preprocessing.
     imbalanced_resampling : bool
         Whether to perform resampling to handle imbalanced data.
     resampling_strategy : Literal["SMOTE", "undersample", "combine"]
@@ -87,6 +89,10 @@ class Preprocessor:
         scaling: Literal["standard", "robust"] = "standard",
         feature_selection: bool = False,
         pca: bool = False,
+        profile: Literal[
+            "generic_ohe", "tree_ohe", "native_categorical"
+        ] = "generic_ohe",
+        outlier_removal: bool = False,
         imbalanced_resampling: bool = True,
         resampling_strategy: Literal["SMOTE", "undersample", "combine"] = "SMOTE",
         skew_threshold: float = 1,
@@ -114,6 +120,16 @@ class Preprocessor:
             Whether to perform feature selection.
         pca : bool
             Whether to perform PCA for feature extraction.
+        profile : Literal["generic_ohe", "tree_ohe", "native_categorical"]
+            Preprocessing family. ``generic_ohe`` keeps the legacy one-hot,
+            skew-correction, and scaling path. ``tree_ohe`` one-hot encodes
+            categoricals but skips numeric scaling/skew transforms.
+            ``native_categorical`` preserves pandas categorical columns for
+            estimators that support them.
+        outlier_removal : bool
+            Whether to remove rows flagged by IsolationForest. Disabled by
+            default because automatic row removal can change the target
+            distribution and hurt external validity.
         imbalanced_resampling : bool
             Whether to perform resampling to handle imbalanced data.
         resampling_strategy : Literal["SMOTE", "undersample", "combine"]
@@ -139,8 +155,20 @@ class Preprocessor:
         self.categorical_features = None
         self.num_imputation = num_imputation
         self.cat_imputation = cat_imputation
+        if profile not in {"generic_ohe", "tree_ohe", "native_categorical"}:
+            raise ValueError(
+                "profile must be one of: 'generic_ohe', 'tree_ohe', "
+                "'native_categorical'."
+            )
+        if profile == "native_categorical" and (feature_selection or pca):
+            raise ValueError(
+                "feature_selection and pca are not compatible with "
+                "native_categorical preprocessing."
+            )
         self.feature_selection = feature_selection
         self.pca = pca
+        self.profile = profile
+        self.outlier_removal = outlier_removal
         self.random_state = random_state
         self.scaling = scaling
         self.pca_threshold = pca_threshold
@@ -180,6 +208,18 @@ class Preprocessor:
         self.feature_names_out_ = None
 
         self._reset_fit_state()
+
+    @property
+    def _uses_native_categorical(self) -> bool:
+        return self.profile == "native_categorical"
+
+    @property
+    def _encodes_categorical(self) -> bool:
+        return not self._uses_native_categorical
+
+    @property
+    def _transforms_numeric_shape(self) -> bool:
+        return self.profile == "generic_ohe"
 
     def _reset_fit_state(self) -> None:
         self.numeric_features = (
@@ -295,6 +335,7 @@ class Preprocessor:
             self.n_missing_numeric = X[self.numeric_features].isnull().sum().sum()
             if self.n_missing_numeric > 0:
                 self.missing_numeric_ = True
+            if not self._uses_native_categorical:
                 X, self.missing_num_trans_ = handle_missing_numeric(
                     X, self.numeric_features, self.num_imputation
                 )
@@ -305,26 +346,35 @@ class Preprocessor:
             )
             if self.n_missing_categorical > 0:
                 self.missing_categorical_ = True
-                X, self.missing_cat_trans_ = handle_missing_categorical(
-                    X, self.categorical_features, self.cat_imputation
-                )
+            cat_imputation = (
+                "constant" if self._uses_native_categorical else self.cat_imputation
+            )
+            X, self.missing_cat_trans_ = handle_missing_categorical(
+                X, self.categorical_features, cat_imputation
+            )
 
         self.missing_ = self.missing_numeric_ or self.missing_categorical_
 
         if self.missing_:
             self.report_["imputation"] = {}
             if self.missing_numeric_:
-                self.report_["imputation"]["numeric"] = {
-                    "transformer": self.missing_num_trans_.__class__.__name__,
-                    "n_missing_numeric": self.n_missing_numeric,
-                }
+                if self.missing_num_trans_ is None:
+                    self.report_["imputation"]["numeric"] = {
+                        "policy": "preserved_for_native_estimator",
+                        "n_missing_numeric": self.n_missing_numeric,
+                    }
+                else:
+                    self.report_["imputation"]["numeric"] = {
+                        "transformer": self.missing_num_trans_.__class__.__name__,
+                        "n_missing_numeric": self.n_missing_numeric,
+                    }
             if self.missing_categorical_:
                 self.report_["imputation"]["categorical"] = {
                     "transformer": self.missing_cat_trans_.__class__.__name__,
                     "n_missing_categorical": self.n_missing_categorical,
                 }
 
-        if self.has_numeric_:
+        if self.has_numeric_ and self.outlier_removal:
             n_row_before = X.shape[0]
             X, y, self.outlier_trans_ = handle_outliers(
                 X, y, self.numeric_features, random_state=self.random_state
@@ -335,7 +385,7 @@ class Preprocessor:
                 "n_outliers_removed": n_row_before - n_row_after,
             }
 
-        if self.has_categorical_:
+        if self.has_categorical_ and self._encodes_categorical:
             X, self.cat_trans_, self.ohe_feature_names_ = handle_categorical(
                 X, self.categorical_features
             )
@@ -344,8 +394,16 @@ class Preprocessor:
                 "transformer": self.cat_trans_.__class__.__name__,
                 "encoded_feature_names": self.ohe_feature_names_,
             }
+        elif self.has_categorical_:
+            X = self._coerce_native_categorical(X)
+            self.report_["category_encoding"] = {
+                "transformer": "NativeCategoricalDtype",
+                "categorical_feature_names": self.categorical_features,
+            }
+        if self._uses_native_categorical and self.has_numeric_:
+            X = self._coerce_native_numeric(X)
 
-        if self.has_numeric_:
+        if self.has_numeric_ and self._transforms_numeric_shape:
             (
                 X,
                 self.skew_trans_,
@@ -362,7 +420,7 @@ class Preprocessor:
             self.skewed_feature_names_ = []
             self.lambdas_ = []
 
-        if self.has_numeric_:
+        if self.has_numeric_ and self._transforms_numeric_shape:
             X, self.scaler_ = handle_scaling(X, self.numeric_features, self.scaling)
             self.report_["scaling"] = {
                 "transformer": self.scaler_.__class__.__name__,
@@ -397,7 +455,13 @@ class Preprocessor:
                 "n_features_after": n_features_after,
             }
 
-        if self.imbalanced_resampling and self.imbalanced_:
+        if all(
+            [
+                self.imbalanced_resampling,
+                self.imbalanced_,
+                not self._uses_native_categorical,
+            ]
+        ):
             n_row_before = X.shape[0]
             X, y, self.imbalanced_trans_ = handle_imbalanced(
                 X, y, self.resampling_strategy, random_state=self.random_state
@@ -414,6 +478,12 @@ class Preprocessor:
                     "reason": "Insufficient minority samples for SMOTE.",
                     "strategy": self.resampling_strategy,
                 }
+        elif self.imbalanced_resampling and self.imbalanced_:
+            self.report_["imbalanced_resampling"] = {
+                "skipped": True,
+                "reason": "Native categorical preprocessing preserves raw feature types.",
+                "strategy": self.resampling_strategy,
+            }
 
         self.skewed_ = len(self.skewed_feature_names_) > 0
         if self.pca:
@@ -428,7 +498,7 @@ class Preprocessor:
             ]
         self.fitted = True
 
-        if isinstance(X, pd.DataFrame):
+        if isinstance(X, pd.DataFrame) and not self._uses_native_categorical:
             X = X.values
 
         if isinstance(y, pd.Series):
@@ -454,17 +524,17 @@ class Preprocessor:
         if not isinstance(X, pd.DataFrame):
             raise ValueError("Input data must be a pandas DataFrame.")
         X = X.copy()
-        if self.missing_numeric_:
+        if self.missing_num_trans_ is not None:
             X[self.numeric_features] = self.missing_num_trans_.transform(
                 X[self.numeric_features]
             )
 
-        if self.missing_categorical_:
+        if self.missing_cat_trans_ is not None:
             X[self.categorical_features] = self.missing_cat_trans_.transform(
                 X[self.categorical_features]
             )
 
-        if self.has_categorical_:
+        if self.has_categorical_ and self._encodes_categorical:
             encoded_features = self.cat_trans_.transform(X[self.categorical_features])
             encoded_features_df = pd.DataFrame(
                 encoded_features,
@@ -472,13 +542,17 @@ class Preprocessor:
                 index=X.index,
             )
             X = X.drop(columns=self.categorical_features).join(encoded_features_df)
+        elif self.has_categorical_:
+            X = self._coerce_native_categorical(X)
+        if self._uses_native_categorical and self.has_numeric_:
+            X = self._coerce_native_numeric(X)
 
         if self.skewed_:
             X[self.skewed_feature_names_] = self.skew_trans_.transform(
                 X[self.skewed_feature_names_]
             )
 
-        if self.has_numeric_:
+        if self.has_numeric_ and self.scaler_ is not None:
             X[self.numeric_features] = self.scaler_.transform(X[self.numeric_features])
 
         if self.feature_selection:
@@ -489,9 +563,23 @@ class Preprocessor:
         if self.pca:
             X = self.ext_trans_.transform(X)
 
-        if isinstance(X, pd.DataFrame):
+        if isinstance(X, pd.DataFrame) and not self._uses_native_categorical:
             X = X.values
 
+        return X
+
+    def _coerce_native_categorical(self, X: pd.DataFrame) -> pd.DataFrame:
+        X = X.copy()
+        for feature in self.categorical_features:
+            X[feature] = (
+                X[feature].astype("string").fillna("__missing__").astype("category")
+            )
+        return X
+
+    def _coerce_native_numeric(self, X: pd.DataFrame) -> pd.DataFrame:
+        X = X.copy()
+        for feature in self.numeric_features:
+            X[feature] = pd.to_numeric(X[feature], errors="coerce")
         return X
 
     def report(self):

@@ -47,6 +47,8 @@ dependencies = [
     "Jinja2>=3.0.2,<4.0.0",
     "psutil>=6.1.1,<7.0.0",
     "shap>=0.46.0,<0.47.0",
+    "lightgbm>=4.6.0,<5.0.0",
+    "catboost>=1.2.10,<2.0.0",
 ]
 
 [project.urls]
@@ -101,3 +103,8 @@ extend_exclude = ["debug", "docs"]
 ignore_notebooks = true
 known_first_party = ["mamut"]
 package_module_name_map = { "imbalanced-learn" = "imblearn", "scikit-learn" = "sklearn" }
+
+[tool.pytest.ini_options]
+filterwarnings = [
+    "ignore:Conversion of an array with ndim > 0 to a scalar is deprecated.*:DeprecationWarning:numpy\\.ma\\.extras",
+]

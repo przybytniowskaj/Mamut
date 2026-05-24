@@ -1,6 +1,8 @@
 # Custom
 fitted_models/
 mamut_report/
+.cache/
+benchmark_results/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
