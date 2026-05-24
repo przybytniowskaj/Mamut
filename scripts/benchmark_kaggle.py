@@ -17,6 +17,7 @@ from typing import Iterable, Literal, Sequence
 
 import numpy as np
 import pandas as pd
+from sklearn.base import clone
 from sklearn.model_selection import StratifiedGroupKFold, train_test_split
 
 import mamut
@@ -792,7 +793,7 @@ def run_confirmation_benchmark(
     confirmation_groups: pd.Series | None,
     *,
     config: BenchmarkConfig,
-) -> tuple[pd.DataFrame, dict, list[dict]]:
+) -> tuple[pd.DataFrame, dict, list[dict], Mamut]:
     validate_recipe_scope(config.recipe, config.group_scope)
     X_development, y_development, X_confirmation, y_confirmation = (
         prepare_spaceship_modeling_split(
@@ -899,7 +900,7 @@ def run_confirmation_benchmark(
         file=sys.stderr,
         flush=True,
     )
-    return run_results, aggregate, diagnostics
+    return run_results, aggregate, diagnostics, model
 
 
 def fit_submission_model(
@@ -907,10 +908,28 @@ def fit_submission_model(
     test: pd.DataFrame,
     *,
     config: BenchmarkConfig,
+    frozen_model: Mamut | None = None,
 ) -> tuple[pd.DataFrame, Mamut]:
     X, y, X_test, passenger_ids = prepare_spaceship_features(
         train, test, recipe=config.recipe
     )
+    if frozen_model is not None:
+        selected_model = frozen_model.selected_estimator_.__class__.__name__
+        estimator = clone(frozen_model.selected_estimator_)
+        preprocessor = frozen_model._make_model_preprocessor(selected_model)
+        if preprocessor is not None:
+            X_fitted, y_fitted = preprocessor.fit_transform(X.copy(), y.copy())
+            X_predict = preprocessor.transform(X_test.copy())
+        else:
+            X_fitted, y_fitted = X, y
+            X_predict = X_test
+        estimator.fit(X_fitted, y_fitted)
+        predictions = _coerce_bool_predictions(estimator.predict(X_predict))
+        submission = pd.DataFrame(
+            {"PassengerId": passenger_ids, "Transported": predictions}
+        )
+        return submission, frozen_model
+
     model = _make_mamut(config, random_state=config.random_state, final_refit=True)
     groups = (
         validation_groups(train, config.group_scope)
@@ -923,6 +942,12 @@ def fit_submission_model(
         {"PassengerId": passenger_ids, "Transported": predictions}
     )
     return submission, model
+
+
+def selected_hyperparameters(model: Mamut) -> dict:
+    selected_model = model.selected_estimator_.__class__.__name__
+    study = model.optuna_studies_.get(selected_model)
+    return dict(study.best_params) if study is not None else {}
 
 
 def write_submission(submission: pd.DataFrame, path: Path) -> Path:
@@ -1173,6 +1198,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "confirmation_reserved": args.stage != "diagnostic",
         "official_train_test_relational_overlap": relational_overlap_audit(train, test),
     }
+    confirmation_model = None
     if args.stage == "diagnostic":
         run_results, aggregate, diagnostics = run_spaceship_benchmark(
             train, test, config=config
@@ -1200,7 +1226,12 @@ def main(argv: Sequence[str] | None = None) -> int:
                 development, test, config=config
             )
         else:
-            run_results, aggregate, diagnostics = run_confirmation_benchmark(
+            (
+                run_results,
+                aggregate,
+                diagnostics,
+                confirmation_model,
+            ) = run_confirmation_benchmark(
                 development,
                 confirmation,
                 development_groups,
@@ -1254,13 +1285,20 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
 
     if args.write_submission:
-        submission, _ = fit_submission_model(train, test, config=config)
+        submission, submission_model = fit_submission_model(
+            train,
+            test,
+            config=config,
+            frozen_model=confirmation_model,
+        )
         submission_path = output_dir / "submission.csv"
         write_submission(submission, submission_path)
         payload["submission"] = {
             "generated": True,
             "uploaded": False,
             "path": str(submission_path),
+            "fit_policy": "fixed_confirmation_parameters_refit_on_full_training",
+            "selected_hyperparameters": selected_hyperparameters(submission_model),
         }
         write_campaign_artifacts(payload, results_path, manifest_path)
         if args.submit:
@@ -1273,6 +1311,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "uploaded": True,
                 "path": str(submission_path),
                 "message": message,
+                "fit_policy": "fixed_confirmation_parameters_refit_on_full_training",
+                "selected_hyperparameters": selected_hyperparameters(submission_model),
             }
             write_campaign_artifacts(payload, results_path, manifest_path)
     print(format_results(payload, args.format))

@@ -3,11 +3,13 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
+from sklearn.dummy import DummyClassifier
 
 import scripts.benchmark_kaggle as benchmark_kaggle
 from scripts.benchmark_kaggle import (
     BenchmarkConfig,
     _coerce_bool_predictions,
+    fit_submission_model,
     format_results,
     group_bootstrap_accuracy_interval,
     household_components,
@@ -264,6 +266,52 @@ def test_confirmation_scores_only_selected_prediction_without_passing_holdout_to
     assert "X_holdout" not in captured
     assert "y_holdout" not in captured
     assert "groups_holdout" not in captured
+
+
+def test_submission_refits_frozen_confirmation_parameters_without_retuning(
+    monkeypatch,
+):
+    class FrozenModel:
+        selected_estimator_ = DummyClassifier(strategy="most_frequent")
+
+        @staticmethod
+        def _make_model_preprocessor(model_name):
+            return None
+
+    monkeypatch.setattr(
+        benchmark_kaggle,
+        "_make_mamut",
+        lambda *args, **kwargs: pytest.fail("Frozen submission must not retune MAMUT."),
+    )
+    config = BenchmarkConfig(
+        competition="spaceship-titanic",
+        recipe="spaceship_inductive_v2",
+        runs=1,
+        n_iterations=1,
+        random_state=42,
+        holdout_size=0.5,
+        validation_protocol="grouped",
+        score_metric="accuracy",
+        search_profile="quick",
+        selection_strategy="single_split",
+        selection_cv_splits=2,
+        selection_cv_repeats=1,
+        selection_practical_margin=0.005,
+        preprocessing_profile="auto",
+        optimization_method="random_search",
+        excluded_models=(),
+    )
+
+    submission, returned_model = fit_submission_model(
+        _spaceship_train(),
+        _spaceship_test(),
+        config=config,
+        frozen_model=FrozenModel(),
+    )
+
+    assert list(submission.columns) == ["PassengerId", "Transported"]
+    assert len(submission) == len(_spaceship_test())
+    assert isinstance(returned_model, FrozenModel)
 
 
 def test_raw_recipe_preserves_original_feature_columns_without_target():
