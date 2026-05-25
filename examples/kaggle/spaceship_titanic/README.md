@@ -11,6 +11,10 @@ public score exactly. That score came from a recorded post-leaderboard campaign
 in `scripts/benchmark_kaggle.py`; see the documentation for its protocol and
 limitations.
 
+The notebook resolves the official competition attachment under both Kaggle
+input layouts currently encountered by hosted notebook runs and supports the
+repository's local validation cache for repeatable pre-publication checks.
+
 After `mamut==0.3.0` is available on PyPI, publish a private validation run
 with:
 
