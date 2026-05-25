@@ -26,6 +26,15 @@ MAMUT is best used as a readable baseline and experiment report generator for be
 - Reproducible benchmark diagnostics via `scripts/benchmark_evidence.py`.
 - External Kaggle benchmark harness with immutable campaign records, explicit validation estimands, and submission controls.
 
+## Recorded Benchmark Evidence
+The current evidence benchmark deliberately exposes cases where a simple
+baseline challenges the validation-selected candidate. On Kaggle Spaceship
+Titanic, the best recorded MAMUT public submission scored `0.80617` using a
+CatBoost-focused, post-leaderboard development campaign. This is evidence of
+an improved auditable baseline, not a state-of-the-art or private-leaderboard
+claim. Protocol details and limitations are recorded in the
+[Kaggle benchmarks documentation](https://mamut.readthedocs.io/en/latest/kaggle_benchmarks.html).
+
 ## Installation
 Python 3.12 is the target runtime (see `.python-version`).
 

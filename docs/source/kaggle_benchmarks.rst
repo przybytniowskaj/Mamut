@@ -123,7 +123,7 @@ Audit interpretation: the official train/test files share surname values for
 ``87.9%`` of test rows but do not share exact passenger-group or cabin keys.
 The submitted recipe therefore used a legitimate competition-aligned surname
 signal, but did not exploit target-free family/group batch aggregates and did
-did not establish superior competitive performance. In paired post-score
+not establish superior competitive performance. In paired post-score
 development evaluation, adding those batch aggregates improved LightGBM only
 slightly and did not improve CatBoost; model-family choice accounted for the
 substantial measured gain.
@@ -133,3 +133,7 @@ A separate household-component-disjoint CatBoost development run at commit
 ``0.8003`` to ``0.8214``. It uses a different reserved partition and is not a
 paired superiority test, but it does not indicate that the CatBoost
 improvement depends only on repeated surnames.
+
+The best recorded MAMUT public score, ``0.80617``, should be interpreted as a
+credible auditable baseline result, not a leaderboard-leading result or an
+estimate of private-leaderboard rank.

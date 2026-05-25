@@ -39,9 +39,9 @@ a release validation pass:
 
    | dataset       | samples | features | classes | selected_model     | holdout_score | best_baseline       | best_baseline_score | repeated_cv_mean | repeated_cv_ci | guidance   | leakage_warnings |
    | ------------- | ------- | -------- | ------- | ------------------ | ------------- | ------------------- | ------------------- | ---------------- | -------------- | ---------- | ---------------- |
-   | breast_cancer | 569     | 30       | 2       | LogisticRegression     | 0.981         | Logistic Regression | 0.953               | 0.972            | [0.932, 1.000] | confirmed  | 0                |
+   | breast_cancer | 569     | 30       | 2       | RandomForestClassifier | 0.943         | Logistic Regression | 0.953               | 0.958            | [0.879, 1.000] | challenged | 0                |
    | digits        | 1797    | 64       | 10      | RandomForestClassifier | 0.969         | Random Forest       | 0.969               | 0.962            | [0.939, 0.986] | challenged | 0                |
-   | wine          | 178     | 13       | 3       | LogisticRegression     | 1.000         | Logistic Regression | 1.000               | 0.988            | [0.963, 1.000] | confirmed  | 0                |
+   | wine          | 178     | 13       | 3       | LogisticRegression     | 1.000         | Logistic Regression | 1.000               | 0.981            | [0.934, 1.000] | confirmed  | 0                |
 
 Interpretation
 --------------
@@ -52,8 +52,10 @@ selected model strongly enough to require review. A challenge is useful signal:
 it prevents MAMUT from presenting a validation-selected model as stronger than
 the evidence supports.
 
-On ``digits``, a random-forest candidate is selected and the evidence still
-marks the result for review rather than treating a single holdout result as
-conclusive. On ``wine``, the holdout score is saturated, while score-stability
-evidence remains visible. This is the intended behavior: small datasets with
-perfect holdout scores still need stability checks.
+On ``breast_cancer``, a simple logistic-regression baseline beats the selected
+random-forest candidate on the holdout split, and MAMUT surfaces that
+challenge. On ``digits``, a random-forest baseline matches the selected
+candidate closely enough to require review. On ``wine``, the holdout score is
+saturated while score-stability evidence remains visible. This is the intended
+behavior: attractive holdout results do not suppress baseline or stability
+checks.
