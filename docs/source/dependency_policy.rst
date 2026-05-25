@@ -50,6 +50,9 @@ For these updates, run the routine checks plus:
    uv run sphinx-build -W --keep-going -b html docs/source docs/build/html-strict
    uv run python scripts/benchmark_evidence.py --format markdown
 
+Documentation validation requires the system ``pandoc`` executable because the
+published walkthrough is rendered through ``nbsphinx``.
+
 Review model-selection behavior, preprocessing outputs, and report artifacts
 before merging.
 

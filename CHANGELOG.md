@@ -25,6 +25,7 @@ All notable changes to MAMUT are documented here.
 - Prevented submission generation from starting a fresh tuning search after locked confirmation by refitting the confirmed hyperparameters on all labelled training data.
 - Accelerated group-bootstrap benchmark summaries and documented candidate-fit/runtime budgets for practical experiment control.
 - Corrected generated benchmark documentation so displayed baseline challenges match the locked release environment.
+- Declared Pandoc installation for GitHub Actions and Read the Docs so notebook-backed documentation renders reproducibly.
 
 ## [0.2.1] - 2026-05-12
 

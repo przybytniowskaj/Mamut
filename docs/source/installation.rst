@@ -35,6 +35,11 @@ For repository development, keep the environment synchronized with ``uv.lock``:
 
    uv sync --all-groups
 
+Documentation builds render the walkthrough notebook with ``nbsphinx``, which
+requires the external ``pandoc`` executable. Install it through your operating
+system package manager before building docs (for example, ``dnf install
+pandoc`` on Fedora or ``apt install pandoc`` on Ubuntu).
+
 Common validation commands:
 
 .. code-block:: sh

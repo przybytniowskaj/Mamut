@@ -48,6 +48,11 @@ jobs:
             --ExecutePreprocessor.kernel_name=mamut-docs-ci \
             --ExecutePreprocessor.timeout=300
 
+      - name: Install documentation system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends --yes pandoc
+
       - name: Build documentation with warnings as errors
         run: uv run sphinx-build -W --keep-going -b html docs/source docs/build/html-strict
 
