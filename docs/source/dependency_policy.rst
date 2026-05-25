@@ -28,7 +28,8 @@ Tooling Updates
 
 Development, documentation, packaging, and security tooling can be grouped when
 the change is limited to minor or patch versions. Examples include ``pytest``,
-``pre-commit``, ``deptry``, ``sphinx``, ``twine``, and ``pip-audit``.
+``pre-commit``, ``deptry``, ``sphinx``, ``ipykernel``, ``twine``, and
+``pip-audit``.
 
 ML and Runtime Updates
 ----------------------
@@ -36,7 +37,8 @@ ML and Runtime Updates
 Minor updates to ML/runtime dependencies require full validation because they
 can change model behavior, numerical output, or generated reports. Treat
 ``numpy``, ``scikit-learn``, ``xgboost``, ``shap``, ``imbalanced-learn``,
-``pandas``, and ``scipy`` as behavior-sensitive dependencies.
+``pandas``, ``scipy``, ``lightgbm``, and ``catboost`` as behavior-sensitive
+dependencies.
 
 For these updates, run the routine checks plus:
 
@@ -47,6 +49,9 @@ For these updates, run the routine checks plus:
    uv run make -C docs html
    uv run sphinx-build -W --keep-going -b html docs/source docs/build/html-strict
    uv run python scripts/benchmark_evidence.py --format markdown
+
+Documentation validation requires the system ``pandoc`` executable because the
+published walkthrough is rendered through ``nbsphinx``.
 
 Review model-selection behavior, preprocessing outputs, and report artifacts
 before merging.

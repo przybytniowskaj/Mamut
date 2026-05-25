@@ -4,6 +4,29 @@ All notable changes to MAMUT are documented here.
 
 ## Unreleased
 
+## [0.3.0] - 2026-05-25
+
+### Added
+
+- Added model-aware candidate selection with configurable search profiles and explicit LightGBM and CatBoost support.
+- Added grouped and nested selection diagnostics, evidence-guided challenges, and fixed-parameter refitting for benchmark submissions.
+- Added a reproducible Spaceship Titanic benchmark harness with immutable campaign manifests, locked confirmation handling, relational-overlap audits, and bounded-runtime controls.
+- Added focused tests for model registries, benchmark protocol behavior, public prediction contracts, and candidate-specific preprocessing.
+
+### Changed
+
+- Expanded the documentation around validation estimands, model-selection integrity, Kaggle evidence, and honest interpretation of leaderboard observations.
+- Recorded official Spaceship Titanic public scores of `0.79798` and `0.80617`; the higher score followed observation of an earlier submission and is reported as post-leaderboard development evidence, not an independent final estimate.
+- Updated development tooling with `deptry` and `pytest` maintenance releases while retaining the validated ML/runtime dependency set for this release.
+- Updated the locked documentation/tooling dependency graph to use patched `idna` `3.16`, resolving the reported IDNA encoding advisory.
+
+### Fixed
+
+- Prevented submission generation from starting a fresh tuning search after locked confirmation by refitting the confirmed hyperparameters on all labelled training data.
+- Accelerated group-bootstrap benchmark summaries and documented candidate-fit/runtime budgets for practical experiment control.
+- Corrected generated benchmark documentation so displayed baseline challenges match the locked release environment.
+- Declared Pandoc installation for GitHub Actions and Read the Docs so notebook-backed documentation renders reproducibly.
+
 ## [0.2.1] - 2026-05-12
 
 ### Fixed

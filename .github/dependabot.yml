@@ -47,6 +47,7 @@ updates:
           - "sphinx-*"
           - "nbsphinx"
           - "nbconvert"
+          - "ipykernel"
         update-types:
           - "minor"
           - "patch"
