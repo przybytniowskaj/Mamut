@@ -18,6 +18,7 @@ All notable changes to MAMUT are documented here.
 - Expanded the documentation around validation estimands, model-selection integrity, Kaggle evidence, and honest interpretation of leaderboard observations.
 - Recorded official Spaceship Titanic public scores of `0.79798` and `0.80617`; the higher score followed observation of an earlier submission and is reported as post-leaderboard development evidence, not an independent final estimate.
 - Updated development tooling with `deptry` and `pytest` maintenance releases while retaining the validated ML/runtime dependency set for this release.
+- Updated the locked documentation/tooling dependency graph to use patched `idna` `3.16`, resolving the reported IDNA encoding advisory.
 
 ### Fixed
 
