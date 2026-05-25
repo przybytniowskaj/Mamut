@@ -38,6 +38,19 @@ jobs:
       - name: Run tests
         run: uv run pytest
 
+      - name: Execute documentation walkthrough
+        run: |
+          uv run python -m ipykernel install --user --name mamut-docs-ci
+          uv run jupyter nbconvert --to notebook --execute \
+            docs/source/notebooks/walkthrough.ipynb \
+            --output walkthrough.executed.ipynb \
+            --output-dir "${RUNNER_TEMP}" \
+            --ExecutePreprocessor.kernel_name=mamut-docs-ci \
+            --ExecutePreprocessor.timeout=300
+
+      - name: Build documentation with warnings as errors
+        run: uv run sphinx-build -W --keep-going -b html docs/source docs/build/html-strict
+
       - name: Build package
         run: uv build
 
