@@ -135,6 +135,7 @@ uv run twine check dist/*
 - API reference: https://mamut.readthedocs.io/en/latest/mamut.html
 - Notebook walkthrough: `docs/source/notebooks/walkthrough.ipynb`
 - Kaggle notebook source: https://github.com/przybytniowskaj/Mamut/blob/main/examples/kaggle/spaceship_titanic/mamut_auditable_baseline.ipynb
+- Hosted Kaggle notebook: https://www.kaggle.com/code/igorkolodziej/mamut-auditable-spaceship-titanic-baseline
 - Changelog: `CHANGELOG.md`
 
 ## License
