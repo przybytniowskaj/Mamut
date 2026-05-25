@@ -59,7 +59,7 @@ Repository = "https://github.com/przybytniowskaj/Mamut"
 
 [dependency-groups]
 test = [
-    "pytest>=8.3.4,<9.0.0",
+    "pytest>=8.3.4,<10.0.0",
 ]
 lint = [
     "deptry>=0.24.0,<0.26.0",
