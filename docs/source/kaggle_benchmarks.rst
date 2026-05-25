@@ -137,3 +137,15 @@ improvement depends only on repeated surnames.
 The best recorded MAMUT public score, ``0.80617``, should be interpreted as a
 credible auditable baseline result, not a leaderboard-leading result or an
 estimate of private-leaderboard rank.
+
+Hosted Demonstration Notebook
+-----------------------------
+
+A user-facing Kaggle Code demonstration is published at
+`MAMUT: Auditable Spaceship Titanic Baseline
+<https://www.kaggle.com/code/igorkolodziej/mamut-auditable-spaceship-titanic-baseline>`_.
+It installs the tagged PyPI release, attaches the official competition data,
+shows group-aware holdout and baseline diagnostics, and writes
+``submission.csv`` without submitting it automatically. Its hosted execution
+was validated privately before publication; it is an auditable example, not a
+new independent leaderboard claim.

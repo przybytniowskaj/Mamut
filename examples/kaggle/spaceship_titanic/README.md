@@ -11,6 +11,9 @@ public score exactly. That score came from a recorded post-leaderboard campaign
 in `scripts/benchmark_kaggle.py`; see the documentation for its protocol and
 limitations.
 
+Published notebook:
+https://www.kaggle.com/code/igorkolodziej/mamut-auditable-spaceship-titanic-baseline
+
 The notebook resolves the official competition attachment under both Kaggle
 input layouts currently encountered by hosted notebook runs and supports the
 repository's local validation cache for repeatable pre-publication checks.
@@ -18,12 +21,12 @@ It installs the tagged MAMUT release and uses only MAMUT's validated runtime
 stack, rather than unrelated modeling packages preinstalled in Kaggle's base
 image.
 
-After `mamut==0.3.0` is available on PyPI, publish a private validation run
-with:
+For future notebook revisions, set `"is_private": true` temporarily and run a
+private validation upload with:
 
 ```sh
 kaggle kernels push -p examples/kaggle/spaceship_titanic
 ```
 
-Only make the notebook public after its Kaggle execution completes
-successfully and produces `submission.csv`.
+Restore `"is_private": false` and publish an updated version only after its
+Kaggle execution completes successfully and produces `submission.csv`.
