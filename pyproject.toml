@@ -1,6 +1,6 @@
 [project]
 name = "mamut"
-version = "0.2.1"
+version = "0.3.0"
 description = "Transparent tabular classification workflows with model-selection evidence"
 authors = [
     { name = "Igor Kolodziej" },
@@ -47,6 +47,8 @@ dependencies = [
     "Jinja2>=3.0.2,<4.0.0",
     "psutil>=6.1.1,<7.0.0",
     "shap>=0.46.0,<0.47.0",
+    "lightgbm>=4.6.0,<5.0.0",
+    "catboost>=1.2.10,<2.0.0",
 ]
 
 [project.urls]
@@ -57,10 +59,10 @@ Repository = "https://github.com/przybytniowskaj/Mamut"
 
 [dependency-groups]
 test = [
-    "pytest>=8.3.4,<9.0.0",
+    "pytest>=8.3.4,<10.0.0",
 ]
 lint = [
-    "deptry>=0.24.0,<0.25.0",
+    "deptry>=0.24.0,<0.26.0",
     "pre-commit>=4.0.1,<5.0.0",
 ]
 docs = [
@@ -70,6 +72,7 @@ docs = [
     "sphinx-autodoc-typehints>=3.0.0,<4.0.0",
     "nbsphinx>=0.9.6,<0.10.0",
     "nbconvert>=7.16.5,<8.0.0",
+    "ipykernel>=6.29.5,<7.0.0",
     "sphinx-sitemap>=2.9.0,<3.0.0",
 ]
 package = [
@@ -101,3 +104,8 @@ extend_exclude = ["debug", "docs"]
 ignore_notebooks = true
 known_first_party = ["mamut"]
 package_module_name_map = { "imbalanced-learn" = "imblearn", "scikit-learn" = "sklearn" }
+
+[tool.pytest.ini_options]
+filterwarnings = [
+    "ignore:Conversion of an array with ndim > 0 to a scalar is deprecated.*:DeprecationWarning:numpy\\.ma\\.extras",
+]

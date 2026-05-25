@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+import pytest
 from sklearn.metrics import (
     accuracy_score,
     balanced_accuracy_score,
@@ -30,6 +31,28 @@ SMALL_XGBOOST_SEARCH = {
     "tree_method": (["hist"], "categorical"),
     "n_jobs": ([1], "categorical"),
     "verbosity": ([0], "categorical"),
+}
+
+SMALL_LIGHTGBM_SEARCH = {
+    "n_estimators": (5, 8, "int"),
+    "learning_rate": (0.05, 0.20, "float"),
+    "num_leaves": (7, 15, "int"),
+    "max_depth": ([3, 5], "categorical"),
+    "min_child_samples": (5, 10, "int"),
+    "subsample": (0.8, 1.0, "float"),
+    "colsample_bytree": (0.8, 1.0, "float"),
+    "reg_alpha": (1e-6, 1e-3, "log"),
+    "reg_lambda": (1.0, 2.0, "float"),
+    "class_weight": ([None], "categorical"),
+}
+
+SMALL_CATBOOST_SEARCH = {
+    "iterations": (5, 8, "int"),
+    "learning_rate": (0.05, 0.20, "float"),
+    "depth": (2, 3, "int"),
+    "l2_leaf_reg": (1.0, 3.0, "float"),
+    "random_strength": (1e-3, 1e-2, "log"),
+    "border_count": (32, 64, "int"),
 }
 
 
@@ -131,7 +154,8 @@ def test_mamut_predict_tolerates_unseen_categories(tmp_path, monkeypatch):
     X_new = X.head(4).copy()
     X_new["segment"] = "never_seen"
 
-    predictions = mamut.predict(X_new)
+    with pytest.warns(UserWarning, match="Found unknown categories"):
+        predictions = mamut.predict(X_new)
 
     assert predictions.shape == (4,)
     assert set(predictions).issubset({"yes", "no"})
@@ -159,6 +183,34 @@ def test_mamut_xgboost_smoke(tmp_path, monkeypatch):
     assert predictions.shape == (8,)
 
 
+def test_mamut_lightgbm_and_catboost_smoke(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setitem(
+        model_selection.model_param_dict,
+        "LGBMClassifier",
+        SMALL_LIGHTGBM_SEARCH,
+    )
+    monkeypatch.setitem(
+        model_selection.model_param_dict,
+        "CatBoostClassifier",
+        SMALL_CATBOOST_SEARCH,
+    )
+    X, y = _numeric_classification_frame()
+    mamut = Mamut(
+        include_models=["LGBMClassifier", "CatBoostClassifier"],
+        n_iterations=1,
+        optimization_method="random_search",
+        random_state=42,
+        n_jobs=1,
+    )
+
+    mamut.fit(X, y)
+    predictions = mamut.predict(X.head(8))
+
+    assert {"LGBMClassifier", "CatBoostClassifier"}.issubset(mamut.raw_fitted_models_)
+    assert predictions.shape == (8,)
+
+
 def test_mamut_can_refit_selected_model_on_modeling_data(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     X, y = _numeric_classification_frame()
@@ -177,6 +229,33 @@ def test_mamut_can_refit_selected_model_on_modeling_data(tmp_path, monkeypatch):
     assert mamut.final_preprocessor_ is not None
     assert mamut.holdout_score_ is not None
     assert mamut.predict(X.head(6)).shape == (6,)
+
+
+def test_mamut_nested_cv_selection_records_selection_summary(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    X, y = _mixed_classification_frame()
+    mamut = Mamut(
+        include_models=["GaussianNB"],
+        selection_strategy="nested_cv",
+        selection_cv_splits=2,
+        selection_cv_repeats=1,
+        holdout_size=0.2,
+        refit_final_model=True,
+        n_iterations=1,
+        optimization_method="random_search",
+        random_state=42,
+        num_imputation="mean",
+        cat_imputation="most_frequent",
+    )
+
+    mamut.fit(X, y)
+
+    assert mamut.selection_summary_ is not None
+    assert mamut.selection_summary_.iloc[0]["selection_strategy"] == "nested_cv"
+    assert bool(mamut.selection_summary_.iloc[0]["selected"])
+    assert mamut.final_estimator_ is mamut.selected_estimator_
+    assert mamut.holdout_score_ is not None
+    assert mamut.best_model_.predict(X.head(4)).shape == (4,)
 
 
 def test_public_ensemble_predictions_use_original_labels(tmp_path, monkeypatch):
@@ -200,6 +279,36 @@ def test_public_ensemble_predictions_use_original_labels(tmp_path, monkeypatch):
 
     assert set(ensemble.predict(X.head(6))).issubset({"yes", "no"})
     assert set(greedy_ensemble.predict(X.head(6))).issubset({"yes", "no"})
+
+
+def test_public_ensemble_preserves_model_specific_preprocessing(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setitem(
+        model_selection.model_param_dict,
+        "LGBMClassifier",
+        SMALL_LIGHTGBM_SEARCH,
+    )
+    X, y = _mixed_classification_frame()
+    mamut = Mamut(
+        include_models=["GaussianNB", "LGBMClassifier"],
+        n_iterations=1,
+        optimization_method="random_search",
+        random_state=42,
+        n_jobs=1,
+        num_imputation="mean",
+        cat_imputation="most_frequent",
+    )
+    mamut.fit(X, y)
+
+    ensemble = mamut.create_ensemble()
+    fitted_estimators = ensemble.named_steps["model"].estimator.named_estimators_
+
+    assert fitted_estimators["GaussianNB"].preprocessor_.profile == "generic_ohe"
+    assert (
+        fitted_estimators["LGBMClassifier"].preprocessor_.profile
+        == "native_categorical"
+    )
+    assert ensemble.predict(X.head(4)).shape == (4,)
 
 
 def test_mamut_evaluate_uses_holdout_when_available(tmp_path, monkeypatch):

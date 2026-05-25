@@ -1,0 +1,15 @@
+{
+  "id": "igorkolodziej/mamut-auditable-spaceship-titanic-baseline",
+  "title": "MAMUT: Auditable Spaceship Titanic Baseline",
+  "code_file": "mamut_auditable_baseline.ipynb",
+  "language": "python",
+  "kernel_type": "notebook",
+  "is_private": true,
+  "enable_gpu": false,
+  "enable_internet": true,
+  "dataset_sources": [],
+  "competition_sources": [
+    "spaceship-titanic"
+  ],
+  "kernel_sources": []
+}

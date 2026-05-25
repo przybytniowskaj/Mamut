@@ -1,6 +1,9 @@
 # Custom
 fitted_models/
 mamut_report/
+.cache/
+benchmark_results/
+examples/kaggle/spaceship_titanic/submission.csv
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

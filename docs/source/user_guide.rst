@@ -38,23 +38,77 @@ arguments passed to ``Mamut`` are forwarded to
    )
 
 The preprocessing pipeline can handle missing numeric values, missing
-categorical values, one-hot encoding, skew correction, scaling, outlier
-filtering, imbalanced target resampling, optional feature selection, and
-optional PCA.
+categorical values, one-hot encoding, native categorical columns for supported
+boosting models, skew correction, scaling, optional outlier filtering,
+imbalanced target resampling, optional feature selection, and optional PCA.
+
+By default, ``preprocessing_profile="auto"`` lets each candidate use a
+model-aware preprocessing profile. Linear, kernel, and distance-based models
+use the generic one-hot path. Tree models use one-hot encoded categoricals
+without unnecessary numeric scaling. CatBoost and LightGBM use native
+categorical columns when compatible with the rest of the preprocessing options.
+Set ``preprocessing_profile="generic_ohe"`` to force the legacy shared one-hot
+path for every candidate.
+
+Automatic row removal for outliers is disabled by default because it can change
+the target distribution and hurt external validity. Enable it only when that is
+part of the intended experiment:
+
+.. code-block:: python
+
+   mamut = Mamut(outlier_removal=True)
 
 Model Search
 ------------
 
 MAMUT compares a set of supported classifiers and selects the best model by the
 configured score metric on a validation split. Supported model families include
-logistic regression, random forest, support vector machines, XGBoost,
+logistic regression, random forests, extremely randomized trees, histogram
+gradient boosting, XGBoost, LightGBM, CatBoost, support vector machines,
 multilayer perceptrons, Gaussian naive Bayes, and k-nearest neighbors.
 
-Use ``exclude_models`` to remove expensive or unwanted estimators by class name:
+Use ``search_profile`` to choose the candidate pool:
 
 .. code-block:: python
 
+   mamut = Mamut(search_profile="quick")      # small fast pool
+   mamut = Mamut(search_profile="balanced")   # default tabular pool
+   mamut = Mamut(search_profile="thorough")   # includes slower learners
+
+Use ``include_models`` for an exact candidate set, or ``exclude_models`` to
+remove expensive or unwanted estimators by class name:
+
+.. code-block:: python
+
+   mamut = Mamut(include_models=["RandomForestClassifier", "LGBMClassifier"])
    mamut = Mamut(exclude_models=["SVC", "MLPClassifier"])
+
+``include_models`` and ``exclude_models`` are mutually exclusive. Set
+``n_jobs`` to control parallelism for supported estimators.
+
+Selection Strategy
+------------------
+
+The default ``selection_strategy="single_split"`` keeps runtime low by choosing
+the best tuned candidate on one validation split. For higher-integrity model
+development, use nested validation over the non-holdout modeling data:
+
+.. code-block:: python
+
+   mamut = Mamut(
+       search_profile="balanced",
+       selection_strategy="nested_cv",
+       selection_cv_splits=5,
+       selection_cv_repeats=2,
+       selection_practical_margin=0.005,
+   )
+
+Nested-CV selection performs tuning inside every outer training fold, fits
+preprocessing inside those folds, and never uses final holdout rows. It selects
+by mean outer-fold score; models within the practical margin are treated as
+ties and resolved by lower score variance, then faster selection runtime.
+``selection_strategy="repeated_cv"`` is retained only as a deprecated alias.
+Inspect ``selection_summary_`` after ``fit`` to see the selection evidence.
 
 Hyperparameter Search
 ---------------------
@@ -117,6 +171,21 @@ You can also provide an explicit holdout set:
 Use holdout scores for final reporting. Use validation scores for model
 selection and debugging.
 
+When observations share a subject, household, session, patient, or other unit,
+pass group identifiers so no related rows cross validation boundaries:
+
+.. code-block:: python
+
+   mamut = Mamut(
+       selection_strategy="nested_cv",
+       holdout_size=0.2,
+       refit_final_model=True,
+   )
+   mamut.fit(X, y, groups=passenger_group)
+
+For an explicit holdout, also pass ``groups_holdout=``; overlapping modeling
+and holdout groups are rejected.
+
 Final Refit
 -----------
 
@@ -135,7 +204,9 @@ selection, set ``refit_final_model=True``:
    mamut.fit(X, y)
 
 The final refit never uses holdout rows. Use this option for deployment
-artifacts after you have accepted the validation and holdout diagnostics.
+artifacts after you have accepted validation diagnostics. With
+``selection_strategy="nested_cv"``, the selected model family is also retuned
+by cross-validation on all non-holdout modeling rows before the final fit.
 
 Prediction Contract
 -------------------
@@ -158,11 +229,13 @@ The evidence layer includes:
 
 * basic leakage checks for target-like columns, exact target copies, identifier
   columns, duplicate feature rows, and class imbalance
-* baseline comparison against dummy, logistic regression, and random forest
-  models
-* repeated stratified cross-validation for score stability
-* approximate t-intervals over repeated fold scores, clipped to the valid
-  metric range
+* comparison against fitted MAMUT candidates plus dummy, logistic regression,
+  and random forest baselines
+* repeated stratified cross-validation, or group-disjoint stratified folds when
+  ``groups=`` is supplied, for score stability
+* descriptive t-based stability intervals over repeated fold scores, clipped
+  to the valid metric range; these folds are dependent and the interval is not
+  a confirmatory confidence claim
 * evidence-guided selection guidance that confirms, challenges, or blocks trust
   in the validation-selected model
 
@@ -187,6 +260,16 @@ You can compute the evidence tables without writing a report:
    mamut.leakage_checks_
    mamut.selection_guidance_
 
+For a locked final holdout confirmation, avoid comparing alternate MAMUT
+candidates on that holdout:
+
+.. code-block:: python
+
+   evidence = mamut.generate_evidence(
+       dataset="holdout",
+       include_candidate_comparison=False,
+   )
+
 For lightweight evaluation in scripts or CI, disable expensive or file-writing
 outputs while keeping evidence generation enabled:
 
@@ -201,11 +284,13 @@ outputs while keeping evidence generation enabled:
 The score stability check refits the selected estimator and baseline models
 with fold-local preprocessing. It does not retune hyperparameters inside each
 fold, so treat it as a stability diagnostic rather than a full nested
-cross-validation benchmark.
+cross-validation benchmark. Use ``selection_strategy="nested_cv"`` when model
+selection itself needs nested evaluation.
 
 The evidence-guided selection table is intentionally conservative. If a
 baseline beats the selected model on final holdout data, MAMUT challenges the
-selection but does not silently promote the holdout winner. Use that challenge
+selection for review but keeps the selected candidate as the recommendation.
+It does not silently promote the holdout winner. Use that challenge
 to rerun model selection or reserve a new final holdout before deployment.
 
 For a reproducible example of these diagnostics on public sklearn datasets, see

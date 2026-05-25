@@ -101,8 +101,9 @@ The report includes:
 * evidence-guided selection guidance
 * leakage risk checks
 * dummy, logistic regression, and random forest baseline comparison
-* repeated stratified cross-validation score stability with approximate score
-  intervals
+* repeated stratified cross-validation score stability, using group-disjoint
+  folds when groups were supplied, with descriptive resampling intervals that
+  are not confirmatory confidence intervals
 * ROC curve plots when ``save_plots=True``
 * confusion matrices when ``save_plots=True``
 * Optuna optimization history plots when studies are available

@@ -25,6 +25,8 @@ updates:
           - "scikit-learn"
           - "imbalanced-learn"
           - "xgboost"
+          - "lightgbm"
+          - "catboost"
           - "shap"
         update-types:
           - "minor"
@@ -45,6 +47,7 @@ updates:
           - "sphinx-*"
           - "nbsphinx"
           - "nbconvert"
+          - "ipykernel"
         update-types:
           - "minor"
           - "patch"
@@ -72,6 +75,12 @@ updates:
         update-types:
           - "version-update:semver-major"
       - dependency-name: "xgboost"
+        update-types:
+          - "version-update:semver-major"
+      - dependency-name: "lightgbm"
+        update-types:
+          - "version-update:semver-major"
+      - dependency-name: "catboost"
         update-types:
           - "version-update:semver-major"
       - dependency-name: "shap"
