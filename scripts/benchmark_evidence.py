@@ -21,8 +21,6 @@ DATASET_LOADERS: dict[str, DatasetLoader] = {
     "digits": load_digits,
 }
 
-DEFAULT_EXCLUDED_MODELS = ("SVC", "MLPClassifier", "XGBClassifier")
-
 
 def run_benchmark(
     dataset_names: Iterable[str],
@@ -61,12 +59,13 @@ def _run_dataset(
 ) -> dict:
     X, y = _load_dataset(dataset_name)
     mamut = Mamut(
-        exclude_models=list(DEFAULT_EXCLUDED_MODELS),
+        search_profile="quick",
         score_metric="balanced_accuracy",
         optimization_method="random_search",
         n_iterations=n_iterations,
         random_state=random_state,
         holdout_size=holdout_size,
+        refit_final_model=True,
         evidence_cv_splits=evidence_cv_splits,
         evidence_cv_repeats=evidence_cv_repeats,
         num_imputation="mean",
@@ -119,7 +118,7 @@ def _best_baseline_row(
     baseline_comparison: pd.DataFrame, *, selected_model_label: str
 ) -> pd.Series:
     baselines = baseline_comparison.loc[
-        baseline_comparison["model"] != selected_model_label
+        ~baseline_comparison["model"].str.startswith("MAMUT ")
     ].dropna(subset=["score"])
     if baselines.empty:
         return pd.Series({"model": "", "score": np.nan})

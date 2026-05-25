@@ -24,12 +24,15 @@ Highlights
 * Automated preprocessing for missing values, categorical variables, skewed
   numeric features, scaling, outliers, class imbalance, optional feature
   selection, and optional PCA.
-* Model search across common scikit-learn classifiers and XGBoost.
+* Model search across common scikit-learn classifiers, XGBoost, LightGBM, and
+  CatBoost.
 * Hyperparameter optimization with Optuna using Bayesian or random search.
 * Evaluation reports with metrics, confusion matrices, ROC curves, feature
   importances, and SHAP plots.
-* Evidence diagnostics with leakage checks, baseline comparison, score
-  stability, and approximate score intervals.
+* Evidence diagnostics with leakage checks, baseline comparison, and
+  descriptive score-stability intervals.
+* Group-aware splits and nested-CV selection for related observations such as
+  households, sessions, or passenger groups.
 * Configurable model artifacts for the best model and fitted candidate models.
 
 Start Here
@@ -59,6 +62,7 @@ Minimal Example
        n_iterations=1,
        optimization_method="random_search",
        holdout_size=0.2,
+       refit_final_model=True,
        random_state=42,
    )
    mamut.fit(X, y)
@@ -84,6 +88,7 @@ Documentation
    user_guide
    reports
    benchmark_evidence
+   kaggle_benchmarks
 
 .. toctree::
    :maxdepth: 2

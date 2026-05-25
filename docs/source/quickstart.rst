@@ -23,15 +23,17 @@ Fit a Model
        n_iterations=1,
        optimization_method="random_search",
        holdout_size=0.2,
+       refit_final_model=True,
        random_state=42,
    )
    mamut.fit(X, y)
 
 MAMUT performs stratified train/validation splitting inside the modeling data,
 applies preprocessing, compares candidate classifiers, tunes their
-hyperparameters, and stores the validation-selected public prediction pipeline
-in ``mamut.best_model_``. The holdout split is kept out of selection and is
-used only for final evaluation.
+hyperparameters, and stores the selected public prediction pipeline in
+``mamut.best_model_``. With ``refit_final_model=True``, that pipeline is refit
+on all non-holdout modeling rows. The holdout split is kept out of selection
+and is used only for final evaluation.
 
 Predict
 -------
@@ -58,7 +60,8 @@ Inspect Results
 durations. ``training_summary_`` remains available as a backward-compatible
 alias.
 ``optuna_studies_`` stores the optimization study for each fitted model.
-``holdout_summary_`` contains final scores when holdout data is configured.
+``holdout_summary_`` contains holdout diagnostics when holdout data is
+configured; the selected-model row is the final refit score in this example.
 
 Generate a Report
 -----------------

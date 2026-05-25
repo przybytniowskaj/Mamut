@@ -9,34 +9,80 @@ from sklearn.metrics import (
     roc_auc_score,
 )
 
+SEARCH_PROFILES = ("quick", "balanced", "thorough")
+
 lr_params = {
     "C": (1e-4, 1e4, "log"),
     "l1_ratio": (1e-4, 1.0, "log"),
-    "class_weight": (["balanced"], "categorical"),
+    "class_weight": ([None, "balanced"], "categorical"),
     "max_iter": (1000, 1000, "int"),
     "solver": (["saga", "lbfgs", "liblinear"], "categorical"),
 }
 
 tree_params = {
-    "n_estimators": (10, 1000, "int"),
+    "n_estimators": (100, 500, "int"),
     "criterion": (["gini", "entropy", "log_loss"], "categorical"),
     "bootstrap": ([True], "categorical"),
-    "max_samples": (0.5, 1, "float"),
-    "max_features": (0.1, 0.9, "float"),
-    "min_samples_leaf": (0.05, 0.25, "float"),
+    "max_depth": ([None, 5, 10, 20, 30], "categorical"),
+    "max_features": (["sqrt", "log2", None], "categorical"),
+    "min_samples_leaf": (1, 10, "int"),
+    "min_samples_split": (2, 20, "int"),
+    "class_weight": ([None, "balanced_subsample"], "categorical"),
+}
+
+extra_trees_params = {
+    "n_estimators": (100, 500, "int"),
+    "criterion": (["gini", "entropy", "log_loss"], "categorical"),
+    "max_depth": ([None, 5, 10, 20, 30], "categorical"),
+    "max_features": (["sqrt", "log2", None], "categorical"),
+    "min_samples_leaf": (1, 10, "int"),
+    "min_samples_split": (2, 20, "int"),
+    "class_weight": ([None, "balanced"], "categorical"),
+}
+
+hist_gradient_boosting_params = {
+    "max_iter": (50, 250, "int"),
+    "learning_rate": (0.01, 0.2, "log"),
+    "max_leaf_nodes": (15, 63, "int"),
+    "max_depth": ([None, 3, 5, 8, 12], "categorical"),
+    "min_samples_leaf": (10, 50, "int"),
+    "l2_regularization": (1e-6, 10.0, "log"),
+    "class_weight": ([None, "balanced"], "categorical"),
 }
 
 xgb_params = {
-    "n_estimators": (10, 1000, "int"),
-    "learning_rate": (1e-4, 0.4, "log"),
-    "subsample": (0.25, 1.0, "float"),
+    "n_estimators": (50, 500, "int"),
+    "learning_rate": (0.01, 0.3, "log"),
+    "subsample": (0.5, 1.0, "float"),
     "booster": (["gbtree"], "categorical"),
-    "max_depth": (1, 15, "int"),
-    "min_child_weight": (1, 128, "float"),
-    "colsample_bytree": (0.2, 1.0, "float"),
-    "colsample_bylevel": (0.2, 1.0, "float"),
-    "reg_alpha": (1e-4, 512.0, "log"),
-    "reg_lambda": (1e-3, 1e3, "log"),
+    "max_depth": (2, 8, "int"),
+    "min_child_weight": (1, 20, "float"),
+    "colsample_bytree": (0.5, 1.0, "float"),
+    "colsample_bylevel": (0.5, 1.0, "float"),
+    "reg_alpha": (1e-6, 10.0, "log"),
+    "reg_lambda": (1e-3, 100.0, "log"),
+}
+
+lightgbm_params = {
+    "n_estimators": (50, 500, "int"),
+    "learning_rate": (0.01, 0.3, "log"),
+    "num_leaves": (15, 127, "int"),
+    "max_depth": ([-1, 3, 5, 8, 12], "categorical"),
+    "min_child_samples": (5, 60, "int"),
+    "subsample": (0.5, 1.0, "float"),
+    "colsample_bytree": (0.5, 1.0, "float"),
+    "reg_alpha": (1e-6, 10.0, "log"),
+    "reg_lambda": (1e-3, 100.0, "log"),
+    "class_weight": ([None, "balanced"], "categorical"),
+}
+
+catboost_params = {
+    "iterations": (50, 500, "int"),
+    "learning_rate": (0.01, 0.3, "log"),
+    "depth": (3, 8, "int"),
+    "l2_leaf_reg": (1e-2, 20.0, "log"),
+    "random_strength": (1e-3, 10.0, "log"),
+    "border_count": (32, 255, "int"),
 }
 
 svc_params = {
@@ -70,15 +116,51 @@ knn_params = {
     "n_neighbors": (1, 30, "int"),
 }
 
-model_param_dict = {
+MODEL_SEARCH_SPACES = {
     "LogisticRegression": lr_params,
     "RandomForestClassifier": tree_params,
+    "ExtraTreesClassifier": extra_trees_params,
+    "HistGradientBoostingClassifier": hist_gradient_boosting_params,
     "SVC": svc_params,
     "XGBClassifier": xgb_params,
+    "LGBMClassifier": lightgbm_params,
+    "CatBoostClassifier": catboost_params,
     "MLPClassifier": mlp_params,
     "GaussianNB": gnb_params,
     "KNeighborsClassifier": knn_params,
 }
+
+QUICK_MODEL_NAMES = (
+    "LogisticRegression",
+    "RandomForestClassifier",
+    "ExtraTreesClassifier",
+    "GaussianNB",
+)
+BALANCED_MODEL_NAMES = (
+    "LogisticRegression",
+    "RandomForestClassifier",
+    "ExtraTreesClassifier",
+    "HistGradientBoostingClassifier",
+    "XGBClassifier",
+    "LGBMClassifier",
+    "CatBoostClassifier",
+    "GaussianNB",
+)
+THOROUGH_MODEL_NAMES = tuple(MODEL_SEARCH_SPACES)
+
+# Backward-compatible alias used by older tests and users for introspection.
+model_param_dict = MODEL_SEARCH_SPACES
+
+
+def model_names_for_profile(profile: str) -> tuple[str, ...]:
+    if profile == "quick":
+        return QUICK_MODEL_NAMES
+    if profile == "balanced":
+        return BALANCED_MODEL_NAMES
+    if profile == "thorough":
+        return THOROUGH_MODEL_NAMES
+    raise ValueError("search_profile must be one of: quick, balanced, thorough.")
+
 
 metric_dict = {
     "accuracy": accuracy_score,
@@ -159,6 +241,6 @@ def adjust_search_spaces(param_dict, model):
             param_dict["penalty"] = "elasticnet"
         else:
             param_dict["penalty"] = "l2"
-            param_dict["l1_ratio"] = None
+            param_dict.pop("l1_ratio", None)
 
     return param_dict

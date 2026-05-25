@@ -16,7 +16,9 @@ from sklearn.metrics import (
     recall_score,
     roc_auc_score,
 )
-from sklearn.model_selection import RepeatedStratifiedKFold
+from sklearn.model_selection import RepeatedStratifiedKFold, StratifiedGroupKFold
+
+from mamut.model_selection import fit_estimator, make_preprocessor
 
 
 def default_baseline_estimators(random_state: Optional[int] = 42) -> dict:
@@ -137,9 +139,12 @@ def detect_leakage_risks(X: pd.DataFrame, y: pd.Series) -> pd.DataFrame:
         if n_conflicting:
             issues.append(
                 {
-                    "severity": "warning",
+                    "severity": "info",
                     "check": "duplicate_features_conflicting_targets",
-                    "message": f"{n_conflicting} duplicated feature pattern(s) have conflicting targets.",
+                    "message": (
+                        f"{n_conflicting} duplicated feature pattern(s) have conflicting "
+                        "targets; this is outcome ambiguity, not evidence of leakage."
+                    ),
                 }
             )
         else:
@@ -177,15 +182,26 @@ def build_evidence_report(
     preprocessor_factory: Callable,
     evaluation_dataset: str,
     holdout_available: bool,
+    groups: Optional[pd.Series] = None,
+    groups_train: Optional[pd.Series] = None,
+    groups_evaluation: Optional[pd.Series] = None,
     cv_splits: int = 5,
     cv_repeats: int = 3,
     confidence_level: float = 0.95,
     random_state: Optional[int] = 42,
     practical_margin: float = 0.01,
+    candidate_estimators: Optional[dict] = None,
 ) -> dict:
     selected_model_label = f"MAMUT Selected ({selected_estimator.__class__.__name__})"
+    candidate_estimators = candidate_estimators or {}
+    candidate_comparison_estimators = {
+        f"MAMUT Candidate ({model_name})": estimator
+        for model_name, estimator in candidate_estimators.items()
+        if estimator.__class__.__name__ != selected_estimator.__class__.__name__
+    }
     estimators = {
         selected_model_label: selected_estimator,
+        **candidate_comparison_estimators,
         **default_baseline_estimators(random_state=random_state),
     }
 
@@ -210,17 +226,34 @@ def build_evidence_report(
         cv_repeats=cv_repeats,
         confidence_level=confidence_level,
         random_state=random_state,
+        groups=groups,
     )
     leakage_checks = detect_leakage_risks(X, y if y_leakage is None else y_leakage)
+    group_overlap = np.nan
+    if groups_train is not None and groups_evaluation is not None:
+        group_overlap = len(set(groups_train).intersection(groups_evaluation))
     validation_integrity = pd.DataFrame(
         [
             {
                 "evaluation_dataset": evaluation_dataset,
                 "holdout_available": holdout_available,
-                "cv_strategy": "RepeatedStratifiedKFold",
+                "cv_strategy": (
+                    "RepeatedStratifiedGroupKFold"
+                    if groups is not None
+                    else "RepeatedStratifiedKFold"
+                ),
                 "cv_splits": score_stability.attrs.get("cv_splits", np.nan),
                 "cv_repeats": cv_repeats,
                 "confidence_level": confidence_level,
+                "interval_interpretation": (
+                    "Descriptive stability interval from dependent resampling scores; "
+                    "not a confirmatory confidence interval."
+                ),
+                "grouped_validation": groups is not None,
+                "n_groups": (
+                    int(pd.Series(groups).nunique()) if groups is not None else np.nan
+                ),
+                "evaluation_group_overlap": group_overlap,
                 "n_leakage_warnings": int(
                     leakage_checks["severity"].isin(["warning", "critical"]).sum()
                 ),
@@ -317,11 +350,17 @@ def build_selection_guidance(
     if critical_leakage:
         status = "blocked"
         recommended_model = selected_model_label
+        review_candidate = selected_model_label
         action = "Fix critical leakage risks before trusting model-selection evidence."
         reason = "At least one critical leakage risk was detected."
     elif split_challenge:
         status = "challenged"
-        recommended_model = split_challenger
+        review_candidate = split_challenger
+        recommended_model = (
+            selected_model_label
+            if evaluation_dataset == "holdout"
+            else split_challenger
+        )
         action = _challenge_action(evaluation_dataset)
         reason = (
             f"{split_challenger} outperformed the selected model on the "
@@ -329,7 +368,12 @@ def build_selection_guidance(
         )
     elif stability_challenge:
         status = "challenged_strong" if ci_separated else "challenged"
-        recommended_model = stability_challenger
+        review_candidate = stability_challenger
+        recommended_model = (
+            selected_model_label
+            if evaluation_dataset == "holdout"
+            else stability_challenger
+        )
         action = (
             "Prefer the challenger for review and rerun selection with repeated "
             "validation before changing the production candidate."
@@ -339,10 +383,11 @@ def build_selection_guidance(
             f"{stability_delta:.4f}."
         )
         if ci_separated:
-            reason += " Its confidence interval is separated above the selected model."
+            reason += " Its stability interval is separated above the selected model."
     elif stability_caution:
         status = "confirmed_with_caution"
         recommended_model = selected_model_label
+        review_candidate = stability_challenger
         action = (
             "The selected model remains competitive, but review the lower-variance "
             "alternative before deployment."
@@ -354,11 +399,13 @@ def build_selection_guidance(
     elif pd.isna(selected_split_score) or pd.isna(selected_stability_mean):
         status = "inconclusive"
         recommended_model = selected_model_label
+        review_candidate = selected_model_label
         action = "Evidence was incomplete; inspect failed baseline or stability rows."
         reason = "Selected model evidence contains missing scores."
     else:
         status = "confirmed"
         recommended_model = selected_model_label
+        review_candidate = selected_model_label
         action = "Selected model is competitive with evidence baselines."
         reason = (
             "No evidence baseline exceeded the selected model by the practical margin."
@@ -370,6 +417,7 @@ def build_selection_guidance(
                 "status": status,
                 "selected_model": selected_model_label,
                 "recommended_model": recommended_model,
+                "review_candidate": review_candidate,
                 "reason": reason,
                 "action": action,
                 "evaluation_dataset": evaluation_dataset,
@@ -443,6 +491,7 @@ def evaluate_estimators_on_split(
     for model_name, estimator in estimators.items():
         try:
             fitted_estimator, X_eval_transformed = _fit_estimator_with_preprocessing(
+                model_name=model_name,
                 estimator=estimator,
                 X_train=X_train,
                 y_train=y_train,
@@ -486,10 +535,15 @@ def repeated_stratified_cv_scores(
     cv_repeats: int = 3,
     confidence_level: float = 0.95,
     random_state: Optional[int] = 42,
+    groups: Optional[pd.Series] = None,
 ) -> pd.DataFrame:
-    y = pd.Series(y)
+    X = pd.DataFrame(X).reset_index(drop=True)
+    y = pd.Series(y).reset_index(drop=True)
+    groups = pd.Series(groups).reset_index(drop=True) if groups is not None else None
     min_class_count = int(y.value_counts().min())
     effective_splits = min(cv_splits, min_class_count)
+    if groups is not None:
+        effective_splits = min(effective_splits, int(groups.nunique()))
 
     if effective_splits < 2:
         rows = [
@@ -509,21 +563,34 @@ def repeated_stratified_cv_scores(
         result.attrs["cv_splits"] = effective_splits
         return result
 
-    splitter = RepeatedStratifiedKFold(
-        n_splits=effective_splits,
-        n_repeats=cv_repeats,
-        random_state=random_state,
-    )
+    if groups is None:
+        splitter = RepeatedStratifiedKFold(
+            n_splits=effective_splits,
+            n_repeats=cv_repeats,
+            random_state=random_state,
+        )
+        folds = list(splitter.split(X, y))
+    else:
+        folds = []
+        for repeat in range(cv_repeats):
+            repeat_seed = None if random_state is None else random_state + repeat
+            splitter = StratifiedGroupKFold(
+                n_splits=effective_splits,
+                shuffle=True,
+                random_state=repeat_seed,
+            )
+            folds.extend(splitter.split(X, y, groups))
     rows = []
 
     for model_name, estimator in estimators.items():
         scores = []
         status = "ok"
-        for train_idx, eval_idx in splitter.split(X, y):
+        for train_idx, eval_idx in folds:
             try:
                 fitted_estimator, X_eval_transformed = (
                     _fit_estimator_with_preprocessing(
                         estimator=estimator,
+                        model_name=model_name,
                         X_train=X.iloc[train_idx],
                         y_train=y.iloc[train_idx],
                         X_evaluation=X.iloc[eval_idx],
@@ -624,13 +691,14 @@ def score_estimator(estimator, X, y, metric_name: str, binary: bool) -> float:
 
 
 def _fit_estimator_with_preprocessing(
+    model_name: str,
     estimator,
     X_train: pd.DataFrame,
     y_train: pd.Series,
     X_evaluation: pd.DataFrame,
     preprocessor_factory: Callable,
 ):
-    preprocessor = preprocessor_factory()
+    preprocessor = make_preprocessor(preprocessor_factory, model_name)
     y_train = pd.Series(y_train, index=X_train.index)
 
     if preprocessor is not None:
@@ -650,5 +718,5 @@ def _fit_estimator_with_preprocessing(
         )
 
     fitted_estimator = clone(estimator)
-    fitted_estimator.fit(X_train_transformed, y_train_transformed)
+    fit_estimator(fitted_estimator, X_train_transformed, y_train_transformed)
     return fitted_estimator, X_eval_transformed
